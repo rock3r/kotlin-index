@@ -296,6 +296,30 @@ class BuildFileParserTest {
     }
 
     @Test
+    fun `concat glob in non-srcs attribute is not indexed`() {
+        val workspace = createTempDirectory("build-file-parser-concat-non-srcs-")
+        val packageDir = workspace.resolve("pkg")
+        packageDir.toFile().mkdirs()
+        packageDir.resolve("Main.kt").toFile().writeText("class Main")
+        packageDir.resolve("resources/Extra.kt").toFile().apply {
+            parentFile.mkdirs()
+            writeText("class Extra")
+        }
+        packageDir.resolve("BUILD.bazel").writeText(
+            """
+            kt_jvm_library(
+                name = "lib",
+                srcs = ["Main.kt"],
+                data = ["README"] + glob(["resources/**/*.kt"]),
+            )
+            """.trimIndent(),
+        )
+
+        val result = BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
+        assertEquals(listOf("pkg/Main.kt"), result.paths)
+    }
+
+    @Test
     fun `include after exclude in glob srcs is indexed`() {
         val workspace = createTempDirectory("build-file-parser-exclude-before-include-")
         val packageDir = workspace.resolve("pkg")

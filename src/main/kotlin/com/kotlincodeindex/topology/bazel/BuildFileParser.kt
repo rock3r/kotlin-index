@@ -17,7 +17,7 @@ object BuildFileParser {
     private val SRCS_GLOB_START = Regex("""srcs\s*=\s*glob\s*\(""")
     private val QUOTED_STRING = Regex(""""([^"]+)"""")
     private val SINGLE_QUOTED_STRING = Regex("""'([^']+)'""")
-    private val SRCS_CONCAT_GLOB = Regex("""\+\s*glob\s*\(""")
+    private val SRCS_CONCAT_GLOB = Regex("""srcs\s*=[^+\n]*\+\s*glob\s*\(""")
     private val EXCLUDE_GLOB_START = Regex("""exclude\s*=\s*glob\s*\(""")
     private val POSITIONAL_INCLUDE = Regex("""^\[\s*([\s\S]*?)]""")
     private val INCLUDE_NAMED = Regex("""include\s*=\s*\[([\s\S]*?)]""")
