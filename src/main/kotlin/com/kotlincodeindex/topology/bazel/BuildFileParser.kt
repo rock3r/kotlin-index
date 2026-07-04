@@ -13,7 +13,8 @@ data class BuildParseResult(
 )
 
 object BuildFileParser {
-    private val GLOB_CALL = Regex("""glob\s*\(([\s\S]*?)\)""", RegexOption.MULTILINE)
+    private val GLOB_CALL = Regex("""glob\s*\(""")
+    private val SRCS_GLOB_START = Regex("""srcs\s*=\s*glob\s*\(""")
     private val QUOTED_STRING = Regex(""""([^"]+)"""")
     private val LITERAL_SRCS_BLOCK = Regex("""srcs\s*=\s*\[([\s\S]*?)]""", RegexOption.MULTILINE)
     private val INCLUDE_LIST = Regex("""^\s*\[([\s\S]*?)]""")
@@ -64,10 +65,10 @@ object BuildFileParser {
     )
 
     private fun extractGlobSpecs(content: String): List<GlobSpec> =
-        GLOB_CALL.findAll(content)
-            .filterNot { match -> isExcludeNestedGlob(content, match.range.first) }
-            .map { match ->
-                val body = match.groupValues[1]
+        SRCS_GLOB_START.findAll(content)
+            .mapNotNull { match ->
+                val openParen = match.range.last
+                val body = extractBalancedParenBody(content, openParen) ?: return@mapNotNull null
                 val includes = INCLUDE_LIST.find(body)
                     ?.let { list -> QUOTED_STRING.findAll(list.groupValues[1]).map { it.groupValues[1] }.toList() }
                     .orEmpty()
@@ -83,14 +84,36 @@ object BuildFileParser {
             }
             .toList()
 
-    private fun isExcludeNestedGlob(content: String, globStart: Int): Boolean {
-        val prefixStart = (globStart - 48).coerceAtLeast(0)
-        val prefix = content.substring(prefixStart, globStart)
-        return Regex("""exclude\s*=\s*glob\s*$""").containsMatchIn(prefix)
+    private fun extractBalancedParenBody(content: String, openParenIndex: Int): String? {
+        val endIndex = findBalancedParenEnd(content, openParenIndex) ?: return null
+        return content.substring(openParenIndex + 1, endIndex)
+    }
+
+    private fun findBalancedParenEnd(content: String, openParenIndex: Int): Int? {
+        if (openParenIndex !in content.indices || content[openParenIndex] != '(') {
+            return null
+        }
+        var depth = 0
+        for (index in openParenIndex until content.length) {
+            when (content[index]) {
+                '(' -> depth++
+                ')' -> {
+                    depth--
+                    if (depth == 0) {
+                        return index
+                    }
+                }
+            }
+        }
+        return null
     }
 
     private fun extractLiteralSrcs(content: String): List<String> {
-        val globRanges = GLOB_CALL.findAll(content).map { it.range }.toList()
+        val globRanges = GLOB_CALL.findAll(content).mapNotNull { match ->
+            val openParen = match.range.last
+            val endIndex = findBalancedParenEnd(content, openParen) ?: return@mapNotNull null
+            openParen..endIndex
+        }.toList()
         return LITERAL_SRCS_BLOCK.findAll(content).flatMap { match ->
             if (match.groupValues[1].contains("glob(")) {
                 emptySequence()
@@ -116,10 +139,26 @@ object BuildFileParser {
         val matcher = packageDir.fileSystem.getPathMatcher("glob:$pattern")
         return Files.walk(packageDir, FileVisitOption.FOLLOW_LINKS).use { stream ->
             stream.filter { it.isRegularFile() }
+                .filterNot { isInSubpackage(packageDir, it) }
                 .map { packageDir.relativize(it).toString().replace('\\', '/') }
                 .filter { matcher.matches(Path.of(it)) }
                 .sorted()
                 .toList()
         }
     }
+
+    private fun isInSubpackage(packageDir: Path, file: Path): Boolean {
+        var current = file.parent
+        while (current != null && current != packageDir) {
+            if (hasBuildFile(current)) {
+                return true
+            }
+            current = current.parent
+        }
+        return false
+    }
+
+    private fun hasBuildFile(packageDir: Path): Boolean =
+        packageDir.resolve("BUILD.bazel").isRegularFile() ||
+            packageDir.resolve("BUILD").isRegularFile()
 }
