@@ -1,0 +1,37 @@
+# Gradle
+.gradle/
+build/
+out/
+
+# Kotlin
+.kotlin/
+
+# IntelliJ / Android Studio
+.idea/*
+!.idea/codeStyles/
+!.idea/runConfigurations/
+!.idea/vcs.xml
+*.iml
+
+# OS
+.DS_Store
+
+# Project-specific
+local.properties
+.kotlin-index/
+
+# Worktrees
+/.worktrees
+/.claude/worktrees/
+
+# Plans / scratch
+.plans/
+plans/
+scratch/
+
+# Agent skill temp dirs
+.agents/skills/*/tmp/
+.agents/skills/*-workspace/
+
+# VS Code / misc
+/bin/

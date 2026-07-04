@@ -1,0 +1,3 @@
+//plugins/foo/ui:src/main/kotlin/Panel.kt
+//plugins/foo/ui:src/main/kotlin/Other.kt
+//plugins/foo/ui:src/main/java/Legacy.java

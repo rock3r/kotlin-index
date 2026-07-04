@@ -1,0 +1,159 @@
+package com.kotlincodeindex.application.selectioncontext
+
+import com.kotlincodeindex.application.selectioncontext.model.DisableSelectionInfo
+import com.kotlincodeindex.application.selectioncontext.model.SelectionContainerInfo
+import com.kotlincodeindex.application.selectioncontext.model.SelectionContext
+import org.jetbrains.kotlin.com.intellij.psi.PsiElement
+import org.jetbrains.kotlin.psi.KtCallExpression
+import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
+import org.jetbrains.kotlin.psi.KtFile
+import org.jetbrains.kotlin.psi.KtImportDirective
+import org.jetbrains.kotlin.psi.KtNamedFunction
+import org.jetbrains.kotlin.psi.KtSimpleNameExpression
+
+class SelectionWalker(
+    private val selectionContainerNames: Set<String> = DEFAULT_SELECTION_CONTAINER_NAMES,
+    private val disableSelectionNames: Set<String> = DEFAULT_DISABLE_SELECTION_NAMES,
+    private val composableAnnotation: String = COMPOSABLE_ANNOTATION,
+) {
+    fun analyzeCallSite(call: KtCallExpression, relativeFile: String): SelectionContext {
+        val callee = extractCalleeName(call)
+        val enclosingComposable = findEnclosingComposable(call, relativeFile)
+
+        val file = call.containingKtFile
+        val scAliases = resolveAliases(file, selectionContainerNames)
+        val dsAliases = resolveAliases(file, disableSelectionNames)
+
+        val containers = mutableListOf<SelectionContainerInfo>()
+        var disableSelection: DisableSelectionInfo? = null
+        var excluded = false
+
+        var node = call.parent
+        while (node != null && node != enclosingComposable) {
+            val callExpr = node as? KtCallExpression
+            if (callExpr == null) {
+                node = node.parent
+            } else {
+                val callName = extractCalleeName(callExpr)
+                if (callName == null) {
+                    node = node.parent
+                } else {
+                    when {
+                        callName in dsAliases -> {
+                            if (containers.isEmpty() && disableSelection == null) {
+                                excluded = true
+                                disableSelection = DisableSelectionInfo(
+                                    file = relativeFile,
+                                    line = callExpr.getLineNumber(),
+                                    function = enclosingComposable.name ?: "<anonymous>",
+                                )
+                            }
+                        }
+                        callName in scAliases -> {
+                            containers += SelectionContainerInfo(
+                                file = relativeFile,
+                                line = callExpr.getLineNumber(),
+                                function = enclosingComposable.name ?: "<anonymous>",
+                            )
+                        }
+                    }
+                    node = node.parent
+                }
+            }
+        }
+
+        return SelectionContext(
+            callee = callee ?: "<unknown>",
+            inSelectionContainer = containers.isNotEmpty(),
+            selectionContainerCount = containers.size,
+            excludedByDisableSelection = excluded,
+            selectionContainers = containers,
+            disableSelection = disableSelection,
+        )
+    }
+
+    fun findCallAtLine(file: KtFile, relativeFile: String, line: Int): SelectionContext {
+        val calls = file.collectDescendantsOfType<KtCallExpression>()
+            .filter { it.getLineNumber() == line }
+        val target = calls.firstOrNull { call ->
+            val name = extractCalleeName(call)
+            name != null && name !in selectionContainerNames && name !in disableSelectionNames &&
+                !isSelectionContainerAlias(file, name) && !isDisableSelectionAlias(file, name)
+        } ?: calls.firstOrNull()
+            ?: error("No call expression at line $line in $relativeFile")
+        return analyzeCallSite(target, relativeFile)
+    }
+
+    private fun findEnclosingComposable(call: KtCallExpression, relativeFile: String): KtNamedFunction {
+        var current: PsiElement? = call.parent
+        while (current != null) {
+            if (current is KtNamedFunction && hasComposableAnnotation(current)) {
+                return current
+            }
+            current = current.parent
+        }
+        error("Call site must be inside a @$composableAnnotation function: $relativeFile")
+    }
+
+    private fun hasComposableAnnotation(function: KtNamedFunction): Boolean =
+        function.annotationEntries.any { entry ->
+            entry.shortName?.asString() == composableAnnotation
+        }
+
+    private fun isSelectionContainerAlias(file: KtFile, name: String): Boolean =
+        name in resolveAliases(file, selectionContainerNames)
+
+    private fun isDisableSelectionAlias(file: KtFile, name: String): Boolean =
+        name in resolveAliases(file, disableSelectionNames)
+
+    private fun resolveAliases(file: KtFile, canonicalNames: Set<String>): Set<String> {
+        val names = canonicalNames.toMutableSet()
+        for (import in file.importDirectives) {
+            val importedName = import.importedFqName?.shortName()?.asString() ?: continue
+            if (importedName !in canonicalNames) {
+                continue
+            }
+            val alias = import.aliasName
+            if (alias != null) {
+                names += alias
+            }
+        }
+        return names
+    }
+
+    private fun extractCalleeName(call: KtCallExpression): String? {
+        val callee = call.calleeExpression ?: return null
+        return when (callee) {
+            is KtSimpleNameExpression -> callee.getReferencedName()
+            is KtDotQualifiedExpression -> {
+                (callee.selectorExpression as? KtSimpleNameExpression)?.getReferencedName()
+            }
+            else -> null
+        }
+    }
+
+    private fun KtCallExpression.getLineNumber(): Int {
+        val doc = containingFile.viewProvider.document
+            ?: error("No document for ${containingFile.name}")
+        return doc.getLineNumber(textRange.startOffset) + 1
+    }
+
+    companion object {
+        const val COMPOSABLE_ANNOTATION = "Composable"
+        val DEFAULT_SELECTION_CONTAINER_NAMES: Set<String> = setOf("SelectionContainer")
+        val DEFAULT_DISABLE_SELECTION_NAMES: Set<String> = setOf("DisableSelection")
+    }
+}
+
+private inline fun <reified T> org.jetbrains.kotlin.psi.KtElement.collectDescendantsOfType(): List<T> {
+    val results = mutableListOf<T>()
+    accept(object : org.jetbrains.kotlin.com.intellij.psi.PsiElementVisitor() {
+        override fun visitElement(element: org.jetbrains.kotlin.com.intellij.psi.PsiElement) {
+            if (element is T) {
+                results += element
+            }
+            element.acceptChildren(this)
+        }
+    })
+    return results
+}
