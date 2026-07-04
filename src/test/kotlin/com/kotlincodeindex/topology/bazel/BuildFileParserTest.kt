@@ -37,15 +37,18 @@ class BuildFileParserTest {
         val workspace = createTempDirectory("build-file-parser-subpackage-")
         val packageDir = workspace.resolve("pkg")
         packageDir.toFile().mkdirs()
-        packageDir.resolve("Main.kt").toFile().writeText("class Main")
-        packageDir.resolve("child/Main.kt").toFile().apply {
+        packageDir.resolve("keep/Main.kt").toFile().apply {
             parentFile.mkdirs()
-            writeText("class Child")
+            writeText("class Keep")
         }
-        packageDir.resolve("child/BUILD.bazel").toFile().writeText(
+        packageDir.resolve("sub/Main.kt").toFile().apply {
+            parentFile.mkdirs()
+            writeText("class Sub")
+        }
+        packageDir.resolve("sub/BUILD.bazel").toFile().writeText(
             """
             kt_jvm_library(
-                name = "child",
+                name = "sub",
                 srcs = ["Main.kt"],
             )
             """.trimIndent(),
@@ -60,7 +63,7 @@ class BuildFileParserTest {
         )
 
         val result = BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
-        assertEquals(listOf("pkg/Main.kt"), result.paths)
+        assertEquals(listOf("pkg/keep/Main.kt"), result.paths)
     }
 
     @Test
