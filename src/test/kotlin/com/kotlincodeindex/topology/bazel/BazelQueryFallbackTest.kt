@@ -35,9 +35,10 @@ class BazelQueryFallbackTest {
                 "plugins/foo/ui/src/main/kotlin/Panel.kt",
                 "plugins/foo/ui/src/main/kotlin/Other.kt",
             ),
-            BazelQueryResultParser.parseKotlinSourcePaths(lines),
+            BazelQueryResultParser.parseKotlinSourcePaths(lines.lines),
         )
         assertTrue(warnings.any { it.contains("labels(srcs") })
+        assertEquals(false, lines.includeDeps)
     }
 
     @Test
@@ -58,7 +59,8 @@ class BazelQueryFallbackTest {
             onStderr = warnings::add,
         )
 
-        assertEquals(listOf("plugins/foo/ui/src/main/kotlin/Panel.kt"), BazelQueryResultParser.parseKotlinSourcePaths(lines))
+        assertEquals(listOf("plugins/foo/ui/src/main/kotlin/Panel.kt"), BazelQueryResultParser.parseKotlinSourcePaths(lines.lines))
         assertTrue(warnings.isEmpty())
+        assertEquals(true, lines.includeDeps)
     }
 }

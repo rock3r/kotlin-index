@@ -4,27 +4,48 @@ import java.nio.file.Path
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 
+data class BazelQueryResult(
+    val lines: List<String>,
+    val includeDeps: Boolean,
+)
+
 object BazelTopology {
     fun defaultExecutor(onStderr: (String) -> Unit = { System.err.println(it) }): BazelQueryExecutor =
         BazelQueryExecutor { target, workspace ->
-            if (isBazelAvailable()) {
-                queryWithFallback(target, workspace, LiveBazelProcessRunner, onStderr)
-            } else {
-                degradedQuery(target, workspace, onStderr)
-            }
+            queryWithFallback(target, workspace, LiveBazelProcessRunner, onStderr).lines
         }
 
     fun resolveSources(
         target: String,
         workspace: Path,
         executor: BazelQueryExecutor? = null,
+        processRunner: BazelProcessRunner? = null,
         onStderr: (String) -> Unit = { System.err.println(it) },
     ): TopologyResult {
-        val exec = executor ?: defaultExecutor(onStderr)
-        val lines = exec.query(target, workspace)
+        if (executor != null) {
+            val lines = executor.query(target, workspace)
+            return TopologyResult(
+                sourceFiles = BazelQueryResultParser.parseKotlinSourcePaths(lines),
+                topology = resolveTopology(executor),
+                includeDeps = true,
+            )
+        }
+
+        if (processRunner != null || isBazelAvailable()) {
+            val runner = processRunner ?: LiveBazelProcessRunner
+            val queryResult = queryWithFallback(target, workspace, runner, onStderr)
+            return TopologyResult(
+                sourceFiles = BazelQueryResultParser.parseKotlinSourcePaths(queryResult.lines),
+                topology = "bazel-query",
+                includeDeps = queryResult.includeDeps,
+            )
+        }
+
+        val lines = degradedQuery(target, workspace, onStderr)
         return TopologyResult(
             sourceFiles = BazelQueryResultParser.parseKotlinSourcePaths(lines),
-            topology = resolveTopology(exec),
+            topology = "build-parse",
+            includeDeps = false,
         )
     }
 
@@ -33,11 +54,11 @@ object BazelTopology {
         workspace: Path,
         runner: BazelProcessRunner = LiveBazelProcessRunner,
         onStderr: (String) -> Unit = { System.err.println(it) },
-    ): List<String> {
+    ): BazelQueryResult {
         val primaryQuery = "kind('source file', deps($target))"
         val primary = runner.run(primaryQuery, workspace)
         if (primary.exitCode == 0) {
-            return primary.lines
+            return BazelQueryResult(primary.lines, includeDeps = true)
         }
 
         onStderr(
@@ -48,7 +69,7 @@ object BazelTopology {
         check(fallback.exitCode == 0) {
             "bazel query failed: ${fallback.lines.joinToString("\n")}"
         }
-        return fallback.lines
+        return BazelQueryResult(fallback.lines, includeDeps = false)
     }
 
     private fun resolveTopology(executor: BazelQueryExecutor): String = when {
@@ -98,4 +119,5 @@ object BazelTopology {
 data class TopologyResult(
     val sourceFiles: List<String>,
     val topology: String,
+    val includeDeps: Boolean,
 )

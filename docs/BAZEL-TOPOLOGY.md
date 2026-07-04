@@ -66,7 +66,8 @@ When Bazel is unavailable (default CI path uses mock query fixtures instead):
 
 When `bazel` is available but the dependency closure is incomplete (partial checkout), the CLI
 retries with `labels(srcs, $target)` after `kind('source file', deps($target))` fails. Progress
-and BUILD-parse warnings go to stderr.
+and BUILD-parse warnings go to stderr. Manifest `includeDeps` is `false` for that fallback and
+for `build-parse` degraded mode.
 
 ## Test fixtures
 
