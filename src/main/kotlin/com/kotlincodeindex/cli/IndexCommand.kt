@@ -45,10 +45,15 @@ class IndexCommand : CliktCommand(name = "index") {
         project: Path,
         bazelTarget: String,
         applications: List<String>,
-        queryExecutor: BazelQueryExecutor = BazelTopology.defaultExecutor(),
+        queryExecutor: BazelQueryExecutor? = null,
         progress: (String) -> Unit = {},
     ): Int {
-        val topologyResult = BazelTopology.resolveSources(bazelTarget, project, queryExecutor)
+        val topologyResult = BazelTopology.resolveSources(
+            bazelTarget,
+            project,
+            queryExecutor,
+            onStderr = progress,
+        )
         val sourceFiles = topologyResult.sourceFiles
         val commit = GitHeadResolver.resolve(project)
         val resolver = IndexPathResolver(project)
