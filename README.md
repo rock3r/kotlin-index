@@ -1,5 +1,7 @@
 # kotlin-code-index
 
+[![check](https://github.com/rock3r/kotlin-index/actions/workflows/check.yml/badge.svg)](https://github.com/rock3r/kotlin-index/actions/workflows/check.yml)
+
 > **Experimental** — APIs, index layout, and CLI contracts may change without notice.
 
 Standalone Kotlin CLI that builds a **persistent** local code index (Xodus under
@@ -62,7 +64,13 @@ Run tests:
 | [docs/INDEX-STORAGE.md](docs/INDEX-STORAGE.md) | `.kotlin-index/` + keys |
 | [AGENTS.md](AGENTS.md) | Agent rules |
 
+## Contributing
+
+After the initial GitHub import, all changes go through **pull request → CI babysit →
+squash merge** cycles. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow,
+local checks, and agent conventions.
+
 ## Status
 
-Core **C0–C1** and application **A1–A3** milestones implemented on branch
-`feat/core-c0-a1`. See [docs/CLI.md](docs/CLI.md) for full command reference.
+Core **C0–C1** and application **A1–A3** milestones implemented. See
+[docs/CLI.md](docs/CLI.md) for full command reference.
