@@ -296,6 +296,30 @@ class BuildFileParserTest {
     }
 
     @Test
+    fun `multiline concat glob in srcs is indexed`() {
+        val workspace = createTempDirectory("build-file-parser-multiline-concat-")
+        val packageDir = workspace.resolve("pkg")
+        packageDir.toFile().mkdirs()
+        packageDir.resolve("Main.kt").toFile().writeText("class Main")
+        packageDir.resolve("src/Extra.kt").toFile().apply {
+            parentFile.mkdirs()
+            writeText("class Extra")
+        }
+        packageDir.resolve("BUILD.bazel").writeText(
+            """
+            kt_jvm_library(
+                name = "lib",
+                srcs = ["Main.kt"]
+                    + glob(["src/**/*.kt"]),
+            )
+            """.trimIndent(),
+        )
+
+        val result = BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
+        assertEquals(listOf("pkg/Main.kt", "pkg/src/Extra.kt").sorted(), result.paths.sorted())
+    }
+
+    @Test
     fun `concat glob in non-srcs attribute is not indexed`() {
         val workspace = createTempDirectory("build-file-parser-concat-non-srcs-")
         val packageDir = workspace.resolve("pkg")

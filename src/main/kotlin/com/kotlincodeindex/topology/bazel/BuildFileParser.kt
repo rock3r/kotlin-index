@@ -17,7 +17,8 @@ object BuildFileParser {
     private val SRCS_GLOB_START = Regex("""srcs\s*=\s*glob\s*\(""")
     private val QUOTED_STRING = Regex(""""([^"]+)"""")
     private val SINGLE_QUOTED_STRING = Regex("""'([^']+)'""")
-    private val SRCS_CONCAT_GLOB = Regex("""srcs\s*=[^+\n]*\+\s*glob\s*\(""")
+    private val SRCS_ASSIGNMENT = Regex("""srcs\s*=""")
+    private val CONCAT_PLUS_GLOB = Regex("""\+\s*glob\s*\(""")
     private val EXCLUDE_GLOB_START = Regex("""exclude\s*=\s*glob\s*\(""")
     private val POSITIONAL_INCLUDE = Regex("""^\[\s*([\s\S]*?)]""")
     private val INCLUDE_NAMED = Regex("""include\s*=\s*\[([\s\S]*?)]""")
@@ -83,10 +84,49 @@ object BuildFileParser {
         SRCS_GLOB_START.findAll(content)
             .filterNot { match -> isCommentedOutInBlock(content, match.range.first) }
             .forEach { openParens += it.range.last }
-        SRCS_CONCAT_GLOB.findAll(content)
+        SRCS_ASSIGNMENT.findAll(content)
             .filterNot { match -> isCommentedOutInBlock(content, match.range.first) }
-            .forEach { openParens += it.range.last }
+            .forEach { match ->
+                val valueStart = match.range.last + 1
+                val valueEnd = findSrcsValueEnd(content, valueStart) ?: return@forEach
+                val assignment = content.substring(valueStart, valueEnd)
+                CONCAT_PLUS_GLOB.findAll(assignment).forEach { concat ->
+                    val absIndex = valueStart + concat.range.first
+                    if (!isCommentedOutInBlock(content, absIndex)) {
+                        openParens += valueStart + concat.range.last
+                    }
+                }
+            }
         return openParens.toList()
+    }
+
+    private fun findSrcsValueEnd(content: String, valueStart: Int): Int? {
+        var depth = 0
+        var inString: Char? = null
+        var index = valueStart
+        while (index < content.length) {
+            when (val ch = content[index]) {
+                '"', '\'' -> when {
+                    inString == null -> inString = ch
+                    inString == ch -> inString = null
+                }
+                '#' -> if (inString == null) {
+                    index = content.indexOf('\n', index).let { if (it < 0) content.length else it }
+                    continue
+                }
+                '(', '[', '{' -> if (inString == null) {
+                    depth++
+                }
+                ')', ']', '}' -> if (inString == null) {
+                    depth--
+                }
+                ',' -> if (inString == null && depth == 0) {
+                    return index
+                }
+            }
+            index++
+        }
+        return if (index > valueStart) index else null
     }
 
     private fun extractExcludePatterns(body: String): List<String> =
