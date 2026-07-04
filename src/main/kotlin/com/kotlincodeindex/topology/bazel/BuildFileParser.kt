@@ -13,9 +13,12 @@ data class BuildParseResult(
 )
 
 object BuildFileParser {
-    private val GLOB_BLOCK = Regex("""glob\s*\(\s*\[([\s\S]*?)]""", RegexOption.MULTILINE)
+    private val GLOB_CALL = Regex("""glob\s*\(([\s\S]*?)\)""", RegexOption.MULTILINE)
     private val QUOTED_STRING = Regex(""""([^"]+)"""")
     private val LITERAL_SRCS_BLOCK = Regex("""srcs\s*=\s*\[([\s\S]*?)]""", RegexOption.MULTILINE)
+    private val INCLUDE_LIST = Regex("""^\s*\[([\s\S]*?)]""")
+    private val EXCLUDE_LIST = Regex("""exclude\s*=\s*\[([\s\S]*?)]""")
+    private val EXCLUDE_GLOB = Regex("""exclude\s*=\s*glob\s*\(\s*\[([\s\S]*?)]""")
 
     fun parseKotlinSources(buildFile: Path, workspaceRoot: Path): BuildParseResult {
         val packageDir = checkNotNull(buildFile.parent) { "BUILD file has no parent: $buildFile" }
@@ -24,13 +27,24 @@ object BuildFileParser {
         val paths = linkedSetOf<String>()
         val warnings = mutableListOf<String>()
 
-        for (pattern in extractGlobPatterns(content)) {
-            val expanded = expandGlob(packageDir, pattern)
-            val ktFiles = expanded.filter { it.endsWith(".kt") }
-            if (ktFiles.isEmpty() && pattern.contains(".kt")) {
-                warnings += "BUILD glob '$pattern' under $packageRelative matched no .kt files"
+        for (spec in extractGlobSpecs(content)) {
+            val excluded = spec.excludes.flatMap { expandGlob(packageDir, it) }.toSet()
+            val included = spec.includes.flatMap { expandGlob(packageDir, it) }
+                .filterNot { it in excluded }
+                .toMutableSet()
+
+            for (pattern in spec.includes) {
+                if (!pattern.contains(".kt")) {
+                    continue
+                }
+                val ktMatches = expandGlob(packageDir, pattern)
+                    .filter { it.endsWith(".kt") && it !in excluded }
+                if (ktMatches.isEmpty()) {
+                    warnings += "BUILD glob '$pattern' under $packageRelative matched no .kt files"
+                }
             }
-            ktFiles.forEach { relative ->
+
+            included.filter { it.endsWith(".kt") }.forEach { relative ->
                 paths += "$packageRelative/$relative"
             }
         }
@@ -44,13 +58,39 @@ object BuildFileParser {
         return BuildParseResult(paths.toList(), warnings)
     }
 
-    private fun extractGlobPatterns(content: String): List<String> =
-        GLOB_BLOCK.findAll(content).flatMap { match ->
-            QUOTED_STRING.findAll(match.groupValues[1]).map { it.groupValues[1] }
-        }.toList()
+    private data class GlobSpec(
+        val includes: List<String>,
+        val excludes: List<String>,
+    )
+
+    private fun extractGlobSpecs(content: String): List<GlobSpec> =
+        GLOB_CALL.findAll(content)
+            .filterNot { match -> isExcludeNestedGlob(content, match.range.first) }
+            .map { match ->
+                val body = match.groupValues[1]
+                val includes = INCLUDE_LIST.find(body)
+                    ?.let { list -> QUOTED_STRING.findAll(list.groupValues[1]).map { it.groupValues[1] }.toList() }
+                    .orEmpty()
+                val excludes = buildList {
+                    EXCLUDE_LIST.findAll(body).forEach { exclude ->
+                        addAll(QUOTED_STRING.findAll(exclude.groupValues[1]).map { it.groupValues[1] })
+                    }
+                    EXCLUDE_GLOB.findAll(body).forEach { exclude ->
+                        addAll(QUOTED_STRING.findAll(exclude.groupValues[1]).map { it.groupValues[1] })
+                    }
+                }
+                GlobSpec(includes, excludes)
+            }
+            .toList()
+
+    private fun isExcludeNestedGlob(content: String, globStart: Int): Boolean {
+        val prefixStart = (globStart - 48).coerceAtLeast(0)
+        val prefix = content.substring(prefixStart, globStart)
+        return Regex("""exclude\s*=\s*glob\s*$""").containsMatchIn(prefix)
+    }
 
     private fun extractLiteralSrcs(content: String): List<String> {
-        val globRanges = GLOB_BLOCK.findAll(content).map { it.range }.toList()
+        val globRanges = GLOB_CALL.findAll(content).map { it.range }.toList()
         return LITERAL_SRCS_BLOCK.findAll(content).flatMap { match ->
             if (match.groupValues[1].contains("glob(")) {
                 emptySequence()
