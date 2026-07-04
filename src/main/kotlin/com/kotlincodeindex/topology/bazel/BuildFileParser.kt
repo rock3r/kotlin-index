@@ -16,7 +16,7 @@ object BuildFileParser {
     private val GLOB_CALL = Regex("""glob\s*\(""")
     private val SRCS_GLOB_START = Regex("""srcs\s*=\s*glob\s*\(""")
     private val QUOTED_STRING = Regex(""""([^"]+)"""")
-    private val LITERAL_SRCS_BLOCK = Regex("""srcs\s*=\s*\[([\s\S]*?)]""", RegexOption.MULTILINE)
+    private val SRCS_LIST_START = Regex("""srcs\s*=\s*\[""")
     private val INCLUDE_LIST = Regex("""^\s*\[([\s\S]*?)]""")
     private val EXCLUDE_LIST = Regex("""exclude\s*=\s*\[([\s\S]*?)]""")
     private val EXCLUDE_GLOB = Regex("""exclude\s*=\s*glob\s*\(\s*\[([\s\S]*?)]""")
@@ -108,24 +108,42 @@ object BuildFileParser {
         return null
     }
 
-    private fun extractLiteralSrcs(content: String): List<String> {
-        val globRanges = GLOB_CALL.findAll(content).mapNotNull { match ->
-            val openParen = match.range.last
-            val endIndex = findBalancedParenEnd(content, openParen) ?: return@mapNotNull null
-            openParen..endIndex
-        }.toList()
-        return LITERAL_SRCS_BLOCK.findAll(content).flatMap { match ->
-            if (match.groupValues[1].contains("glob(")) {
-                emptySequence()
-            } else {
-                QUOTED_STRING.findAll(match.groupValues[1])
-                    .map { it.groupValues[1] }
-                    .filter { quoted ->
-                        val quoteRange = match.range.first + match.groupValues[1].indexOf("\"$quoted\"")
-                        globRanges.none { quoteRange in it }
-                    }
+    private fun extractLiteralSrcs(content: String): List<String> =
+        SRCS_LIST_START.findAll(content).flatMap { match ->
+            val openBracket = match.range.last
+            val blockBody = extractBalancedBracketBody(content, openBracket) ?: return@flatMap emptySequence()
+            val globRangesInBlock = GLOB_CALL.findAll(blockBody).mapNotNull { globMatch ->
+                val openParen = globMatch.range.last
+                val endIndex = findBalancedParenEnd(blockBody, openParen) ?: return@mapNotNull null
+                globMatch.range.first..endIndex
             }
+            QUOTED_STRING.findAll(blockBody)
+                .filter { quoted -> globRangesInBlock.none { quoted.range.first in it } }
+                .map { it.groupValues[1] }
         }.toList()
+
+    private fun extractBalancedBracketBody(content: String, openBracketIndex: Int): String? {
+        val endIndex = findBalancedBracketEnd(content, openBracketIndex) ?: return null
+        return content.substring(openBracketIndex + 1, endIndex)
+    }
+
+    private fun findBalancedBracketEnd(content: String, openBracketIndex: Int): Int? {
+        if (openBracketIndex !in content.indices || content[openBracketIndex] != '[') {
+            return null
+        }
+        var depth = 0
+        for (index in openBracketIndex until content.length) {
+            when (content[index]) {
+                '[' -> depth++
+                ']' -> {
+                    depth--
+                    if (depth == 0) {
+                        return index
+                    }
+                }
+            }
+        }
+        return null
     }
 
     private fun expandGlob(packageDir: Path, pattern: String): List<String> {

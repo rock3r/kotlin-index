@@ -118,4 +118,28 @@ class BuildFileParserTest {
         val result = BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
         assertEquals(listOf("pkg/src/main/kotlin/Main.kt"), result.paths)
     }
+
+    @Test
+    fun `literal srcs are kept when bracket body mentions glob`() {
+        val workspace = createTempDirectory("build-file-parser-literal-with-glob-")
+        val packageDir = workspace.resolve("pkg")
+        packageDir.toFile().mkdirs()
+        packageDir.resolve("Main.kt").toFile().writeText("class Main")
+        packageDir.resolve("Other.kt").toFile().writeText("class Other")
+        packageDir.resolve("BUILD.bazel").writeText(
+            """
+            kt_jvm_library(
+                name = "lib",
+                srcs = [
+                    "Main.kt",
+                    # glob(["Legacy.kt"]),
+                    "Other.kt",
+                ],
+            )
+            """.trimIndent(),
+        )
+
+        val result = BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
+        assertEquals(listOf("pkg/Main.kt", "pkg/Other.kt").sorted(), result.paths.sorted())
+    }
 }
