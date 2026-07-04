@@ -127,7 +127,22 @@ object BuildFileParser {
 
     private fun isCommentedOutInBlock(blockBody: String, index: Int): Boolean {
         val lineStart = blockBody.lastIndexOf('\n', index - 1) + 1
-        return blockBody.substring(lineStart, index).contains('#')
+        val lineEnd = blockBody.indexOf('\n', index).let { if (it < 0) blockBody.length else it }
+        val line = blockBody.substring(lineStart, lineEnd)
+        val relativeIndex = index - lineStart
+
+        var inString = false
+        var cursor = 0
+        while (cursor < relativeIndex) {
+            when (line[cursor]) {
+                '"' -> inString = !inString
+                '#' -> if (!inString) {
+                    return true
+                }
+            }
+            cursor++
+        }
+        return false
     }
 
     private fun extractBalancedBracketBody(content: String, openBracketIndex: Int): String? {

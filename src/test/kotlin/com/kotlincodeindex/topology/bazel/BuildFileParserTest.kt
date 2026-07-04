@@ -67,6 +67,29 @@ class BuildFileParserTest {
     }
 
     @Test
+    fun `hash in srcs path does not comment out later entries`() {
+        val workspace = createTempDirectory("build-file-parser-hash-in-path-")
+        val packageDir = workspace.resolve("pkg")
+        packageDir.toFile().mkdirs()
+        packageDir.resolve("foo#bar.kt").toFile().writeText("class FooBar")
+        packageDir.resolve("Other.kt").toFile().writeText("class Other")
+        packageDir.resolve("BUILD.bazel").writeText(
+            """
+            kt_jvm_library(
+                name = "lib",
+                srcs = ["foo#bar.kt", "Other.kt"],
+            )
+            """.trimIndent(),
+        )
+
+        val result = BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
+        assertEquals(
+            listOf("pkg/Other.kt", "pkg/foo#bar.kt").sorted(),
+            result.paths.sorted(),
+        )
+    }
+
+    @Test
     fun `commented srcs entries are not indexed as sources`() {
         val workspace = createTempDirectory("build-file-parser-commented-srcs-")
         val packageDir = workspace.resolve("pkg")
