@@ -3,10 +3,7 @@ package com.kotlincodeindex.topology.bazel
 import java.nio.file.Path
 import kotlin.io.path.readText
 
-data class BazelProject(
-    val directories: List<String>,
-    val targets: List<String>,
-)
+data class BazelProject(val directories: List<String>, val targets: List<String>)
 
 object BazelProjectFile {
     fun parse(path: Path): BazelProject {

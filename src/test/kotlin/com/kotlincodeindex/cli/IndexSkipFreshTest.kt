@@ -1,8 +1,7 @@
 package com.kotlincodeindex.cli
 
-import com.kotlincodeindex.core.manifest.ManifestIO
-import com.kotlincodeindex.core.path.IndexPathResolver
 import com.kotlincodeindex.topology.bazel.MockBazelQueryExecutor
+import java.nio.file.Files
 import kotlin.io.path.Path
 import kotlin.io.path.createTempDirectory
 import kotlin.io.path.readText
@@ -10,7 +9,6 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import java.nio.file.Files
 
 class IndexSkipFreshTest {
     private val tempDirs = mutableListOf<java.nio.file.Path>()
@@ -24,29 +22,34 @@ class IndexSkipFreshTest {
     @Test
     fun `second index skips when manifest is fresh`() {
         val workspace = createGitWorkspace()
-        val mockOutput = Path("src/test/resources/fixtures/bazel/mock-query-output.txt")
-            .readText()
-            .lines()
+        val mockOutput =
+            Path("src/test/resources/fixtures/bazel/mock-query-output.txt").readText().lines()
         val executor = MockBazelQueryExecutor(mockOutput)
         val command = IndexCommand()
 
         val stderrFirst = StringBuilder()
-        assertEquals(0, command.runIndexedBuild(
-            project = workspace,
-            bazelTarget = "//plugins/foo/ui:ui",
-            applications = emptyList(),
-            queryExecutor = executor,
-            progress = { stderrFirst.appendLine(it) },
-        ))
+        assertEquals(
+            0,
+            command.runIndexedBuild(
+                project = workspace,
+                bazelTarget = "//plugins/foo/ui:ui",
+                applications = emptyList(),
+                queryExecutor = executor,
+                progress = { stderrFirst.appendLine(it) },
+            ),
+        )
 
         val stderrSecond = StringBuilder()
-        assertEquals(0, command.runIndexedBuild(
-            project = workspace,
-            bazelTarget = "//plugins/foo/ui:ui",
-            applications = emptyList(),
-            queryExecutor = executor,
-            progress = { stderrSecond.appendLine(it) },
-        ))
+        assertEquals(
+            0,
+            command.runIndexedBuild(
+                project = workspace,
+                bazelTarget = "//plugins/foo/ui:ui",
+                applications = emptyList(),
+                queryExecutor = executor,
+                progress = { stderrSecond.appendLine(it) },
+            ),
+        )
 
         assertTrue(stderrFirst.toString().contains("FileHashProducer"))
         assertTrue(stderrSecond.toString().contains("skip"), stderrSecond.toString())
@@ -75,9 +78,10 @@ class IndexSkipFreshTest {
     }
 
     private fun runGit(workspace: java.nio.file.Path, vararg args: String) {
-        val process = ProcessBuilder(*listOf("git", "-C", workspace.toString(), *args).toTypedArray())
-            .redirectErrorStream(true)
-            .start()
+        val process =
+            ProcessBuilder(*listOf("git", "-C", workspace.toString(), *args).toTypedArray())
+                .redirectErrorStream(true)
+                .start()
         check(process.waitFor() == 0)
     }
 }

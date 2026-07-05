@@ -40,33 +40,43 @@ class SelectionContextQueryService(
                         !row.excludedByDisableSelection
                 }
             }
-            "nested-selection-container" ->
-                sites.filter { it.selectionContainerCount > 1 }
+            "nested-selection-container" -> sites.filter { it.selectionContainerCount > 1 }
             "all-call-sites" -> sites
             else -> error("Unknown preset: $preset")
         }
     }
 
     fun queryPoint(file: String, line: Int, column: Int? = null): List<SelectionContextQueryRow> {
-        val prefix = if (column != null) {
-            CodeIndexKey.composeSelectionSite(file, line, column).value
-        } else {
-            "compose:selection-site:$file:$line:"
-        }
+        val prefix =
+            if (column != null) {
+                CodeIndexKey.composeSelectionSite(file, line, column).value
+            } else {
+                "compose:selection-site:$file:$line:"
+            }
         return if (column != null) {
-            store.get(CodeIndexKey.parse(prefix))?.let { recordToRow(prefix, it) }?.let { listOf(it) }
-                ?: emptyList()
+            store
+                .get(CodeIndexKey.parse(prefix))
+                ?.let { recordToRow(prefix, it) }
+                ?.let(::listOf)
+                .orEmpty()
         } else {
-            store.prefixScan(prefix).map { (key, record) -> recordToRow(key.value, record) }.toList()
+            store
+                .prefixScan(prefix)
+                .map { (key, record) -> recordToRow(key.value, record) }
+                .toList()
         }
     }
 
     private fun loadAllSites(): List<SelectionContextQueryRow> =
-        store.prefixScan("compose:selection-site:")
+        store
+            .prefixScan("compose:selection-site:")
             .map { (key, record) -> recordToRow(key.value, record) }
             .toList()
 
-    private fun recordToRow(rawKey: String, record: com.kotlincodeindex.core.record.CodeIndexRecord): SelectionContextQueryRow {
+    private fun recordToRow(
+        rawKey: String,
+        record: com.kotlincodeindex.core.record.CodeIndexRecord,
+    ): SelectionContextQueryRow {
         val compose = record as ComposeSelectionSiteRecord
         val parts = rawKey.removePrefix("compose:selection-site:").split(":")
         val column = parts.last().toInt()
@@ -93,18 +103,20 @@ class SelectionContextQueryService(
 object SelectionContextJsonlFormatter {
     private val json = Json { encodeDefaults = true }
 
-    fun formatLines(rows: List<SelectionContextQueryRow>): List<String> =
-        rows.map { json.encodeToString(SelectionContextQueryRow.serializer(), it) }
+    fun formatLines(rows: List<SelectionContextQueryRow>): List<String> = rows.map {
+        json.encodeToString(SelectionContextQueryRow.serializer(), it)
+    }
 }
 
 class PresetConfigLoader {
     fun loadInteractiveCallees(): Set<String> {
-        val stream = javaClass.classLoader.getResourceAsStream("presets/interactive-in-sc.json")
-            ?: error("Missing preset config: presets/interactive-in-sc.json")
-        val config = Json.decodeFromString<InteractivePresetConfig>(stream.bufferedReader().readText())
+        val stream =
+            javaClass.classLoader.getResourceAsStream("presets/interactive-in-sc.json")
+                ?: error("Missing preset config: presets/interactive-in-sc.json")
+        val config =
+            Json.decodeFromString<InteractivePresetConfig>(stream.bufferedReader().readText())
         return config.callees.toSet()
     }
 }
 
-@Serializable
-private data class InteractivePresetConfig(val callees: List<String>)
+@Serializable private data class InteractivePresetConfig(val callees: List<String>)

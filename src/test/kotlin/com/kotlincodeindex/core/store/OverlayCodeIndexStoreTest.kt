@@ -72,8 +72,6 @@ class OverlayCodeIndexStoreTest {
             inSelectionContainer = false,
             selectionContainerCount = 0,
             excludedByDisableSelection = false,
-            selectionContainers = listOf(
-                SelectionContainerRef("ui/A.kt", 1, "Fn"),
-            ),
+            selectionContainers = listOf(SelectionContainerRef("ui/A.kt", 1, "Fn")),
         )
 }

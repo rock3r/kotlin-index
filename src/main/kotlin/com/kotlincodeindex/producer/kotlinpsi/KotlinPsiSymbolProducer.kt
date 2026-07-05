@@ -26,7 +26,7 @@ class KotlinPsiSymbolProducer : IndexProducer {
             ktFiles.forEachIndexed { index, relativePath ->
                 context.reportFileProgress(index + 1, ktFiles.size, relativePath)
                 val file = parser.parseFile(relativePath, context.readSource(relativePath))
-                val symbols = collectSymbols(file, relativePath)
+                val symbols = collectSymbols(file)
                 for (symbol in symbols) {
                     store.put(
                         CodeIndexKey.sym(symbol.fqn),
@@ -40,19 +40,21 @@ class KotlinPsiSymbolProducer : IndexProducer {
                     )
                 }
                 for (call in file.collectDescendantsOfType<KtCallExpression>()) {
-                    val callee = extractCalleeName(call) ?: continue
-                    val resolved = resolveSymbol(callee, symbols) ?: continue
-                    val line = call.lineNumber()
-                    val column = call.columnNumber()
-                    store.put(
-                        CodeIndexKey.ref(resolved.fqn, relativePath, line),
-                        ReferenceRecord(
-                            symbolFqn = resolved.fqn,
-                            relativeFile = relativePath,
-                            line = line,
-                            column = column,
-                        ),
-                    )
+                    val callee = extractCalleeName(call)
+                    val resolved = callee?.let { resolveSymbol(it, symbols) }
+                    if (callee != null && resolved != null) {
+                        val line = call.lineNumber()
+                        val column = call.columnNumber()
+                        store.put(
+                            CodeIndexKey.ref(resolved.fqn, relativePath, line),
+                            ReferenceRecord(
+                                symbolFqn = resolved.fqn,
+                                relativeFile = relativePath,
+                                line = line,
+                                column = column,
+                            ),
+                        )
+                    }
                 }
             }
         }
@@ -63,7 +65,7 @@ class KotlinPsiSymbolProducer : IndexProducer {
         store.prefixScan("ref:").forEach { (key, _) -> store.delete(key) }
     }
 
-    private fun collectSymbols(file: KtFile, relativePath: String): List<ResolvedSymbol> {
+    private fun collectSymbols(file: KtFile): List<ResolvedSymbol> {
         val pkg = file.packageFqName.asString().takeIf { it.isNotBlank() }
         val results = mutableListOf<ResolvedSymbol>()
         for (cls in file.collectDescendantsOfType<KtClass>()) {
@@ -80,7 +82,9 @@ class KotlinPsiSymbolProducer : IndexProducer {
     }
 
     private fun resolveSymbol(callee: String, symbols: List<ResolvedSymbol>): ResolvedSymbol? =
-        symbols.firstOrNull { it.name == callee }
+        symbols.firstOrNull {
+            it.name == callee
+        }
 
     private fun extractCalleeName(call: KtCallExpression): String? {
         val callee = call.calleeExpression ?: return null
@@ -93,8 +97,11 @@ class KotlinPsiSymbolProducer : IndexProducer {
     }
 
     private fun KtNamedFunction.lineNumber(): Int = lineNumberFromOffset(textRange.startOffset)
+
     private fun KtClass.lineNumber(): Int = lineNumberFromOffset(textRange.startOffset)
+
     private fun KtCallExpression.lineNumber(): Int = lineNumberFromOffset(textRange.startOffset)
+
     private fun KtCallExpression.columnNumber(): Int {
         val doc = containingFile.viewProvider.document ?: return 1
         val line = doc.getLineNumber(textRange.startOffset)
@@ -114,15 +121,18 @@ class KotlinPsiSymbolProducer : IndexProducer {
     )
 }
 
-private inline fun <reified T> org.jetbrains.kotlin.psi.KtElement.collectDescendantsOfType(): List<T> {
+private inline fun <reified T> org.jetbrains.kotlin.psi.KtElement.collectDescendantsOfType():
+    List<T> {
     val results = mutableListOf<T>()
-    accept(object : org.jetbrains.kotlin.com.intellij.psi.PsiElementVisitor() {
-        override fun visitElement(element: org.jetbrains.kotlin.com.intellij.psi.PsiElement) {
-            if (element is T) {
-                results += element
+    accept(
+        object : org.jetbrains.kotlin.com.intellij.psi.PsiElementVisitor() {
+            override fun visitElement(element: org.jetbrains.kotlin.com.intellij.psi.PsiElement) {
+                if (element is T) {
+                    results += element
+                }
+                element.acceptChildren(this)
             }
-            element.acceptChildren(this)
         }
-    })
+    )
     return results
 }

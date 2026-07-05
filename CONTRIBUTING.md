@@ -22,7 +22,8 @@ small fixes so CI always runs.
 ## Local checks
 
 ```bash
-./gradlew check          # unit tests (required before every push)
+./gradlew check          # tests + detekt + ktfmt (required before every push)
+./gradlew ktfmtFormat    # apply ktfmt when formatting drifts
 ./gradlew shadowJar      # fat JAR smoke build
 ```
 

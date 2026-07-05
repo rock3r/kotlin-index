@@ -17,12 +17,11 @@ object ProducerRegistry {
 
     fun all(): Collection<IndexProducer> = producers.values
 
-    fun forApplications(applicationIds: List<String>): List<IndexProducer> =
-        buildList {
-            add(FileHashProducer())
-            add(com.kotlincodeindex.producer.kotlinpsi.KotlinPsiSymbolProducer())
-            for (id in applicationIds) {
-                producers[id]?.let { add(it) }
-            }
+    fun forApplications(applicationIds: List<String>): List<IndexProducer> = buildList {
+        add(FileHashProducer())
+        add(com.kotlincodeindex.producer.kotlinpsi.KotlinPsiSymbolProducer())
+        for (id in applicationIds) {
+            producers[id]?.let { add(it) }
         }
+    }
 }

@@ -96,7 +96,11 @@ class SelectionWalkerTest {
     }
 
     private fun fixture(name: String): String =
-        checkNotNull(javaClass.classLoader.getResourceAsStream("fixtures/selection-context/$name")) {
-            "Missing fixture: $name"
-        }.bufferedReader().readText()
+        checkNotNull(
+                javaClass.classLoader.getResourceAsStream("fixtures/selection-context/$name")
+            ) {
+                "Missing fixture: $name"
+            }
+            .bufferedReader()
+            .readText()
 }

@@ -2,7 +2,6 @@ package com.kotlincodeindex.smoke
 
 import com.kotlincodeindex.application.selectioncontext.SelectionWalker
 import com.kotlincodeindex.parse.KotlinPsiParser
-import java.nio.file.Path
 import java.nio.file.Paths
 import kotlin.io.path.exists
 import kotlin.io.path.readText
@@ -13,46 +12,55 @@ import kotlin.io.path.readText
  *     ./gradlew run --args="smoke /path/to/intellij-community"
  */
 fun main(args: Array<String>) {
-    val intellijRoot = when {
-        args.size >= 2 && args[0] == "smoke" -> Paths.get(args[1])
-        args.isNotEmpty() -> Paths.get(args[0])
-        else -> Paths.get("../intellij-community").toAbsolutePath().normalize()
-    }
+    val intellijRoot =
+        when {
+            args.size >= 2 && args[0] == "smoke" -> Paths.get(args[1])
+            args.isNotEmpty() -> Paths.get(args[0])
+            else -> Paths.get("../intellij-community").toAbsolutePath().normalize()
+        }
     require(intellijRoot.exists()) { "intellij-community not found at $intellijRoot" }
 
-    val cases = listOf(
-        SmokeCase(
-            relative = "plugins/devkit/intellij.devkit.compose/src/showcase/ComposeShowcase.kt",
-            line = 223,
-            label = "Text inside SelectionContainer (SelectableText)",
-        ),
-        SmokeCase(
-            relative = "plugins/devkit/intellij.devkit.compose/src/showcase/ComposeShowcase.kt",
-            line = 212,
-            label = "Text outside SelectionContainer (Label)",
-        ),
-        SmokeCase(
-            relative = "platform/jewel/ui/src/main/kotlin/org/jetbrains/jewel/ui/component/Popup.kt",
-            line = 219,
-            label = "ComposePopup inside DisableSelection",
-        ),
-        SmokeCase(
-            relative =
-                "platform/jewel/markdown/core/src/main/kotlin/org/jetbrains/jewel/markdown/rendering/DefaultMarkdownBlockRenderer.kt",
-            line = 740,
-            label = "Text inside DisableSelection (FencedBlockInfo)",
-        ),
-        SmokeCase(
-            relative = "platform/jewel/markdown/core/src/main/kotlin/org/jetbrains/jewel/markdown/Markdown.kt",
-            line = 308,
-            label = "RenderBlock inside LazyColumn lambda (MaybeSelectable content — indirect SC)",
-        ),
-        SmokeCase(
-            relative = "platform/jewel/markdown/core/src/main/kotlin/org/jetbrains/jewel/markdown/Markdown.kt",
-            line = 337,
-            label = "movableContent inside conditional SelectionContainer (direct SC)",
-        ),
-    )
+    val cases =
+        listOf(
+            SmokeCase(
+                relative = "plugins/devkit/intellij.devkit.compose/src/showcase/ComposeShowcase.kt",
+                line = 223,
+                label = "Text inside SelectionContainer (SelectableText)",
+            ),
+            SmokeCase(
+                relative = "plugins/devkit/intellij.devkit.compose/src/showcase/ComposeShowcase.kt",
+                line = 212,
+                label = "Text outside SelectionContainer (Label)",
+            ),
+            SmokeCase(
+                relative =
+                    "platform/jewel/ui/src/main/kotlin/org/jetbrains/jewel/ui/component/Popup.kt",
+                line = 219,
+                label = "ComposePopup inside DisableSelection",
+            ),
+            SmokeCase(
+                relative =
+                    "platform/jewel/markdown/core/src/main/kotlin/" +
+                        "org/jetbrains/jewel/markdown/rendering/DefaultMarkdownBlockRenderer.kt",
+                line = 740,
+                label = "Text inside DisableSelection (FencedBlockInfo)",
+            ),
+            SmokeCase(
+                relative =
+                    "platform/jewel/markdown/core/src/main/kotlin/" +
+                        "org/jetbrains/jewel/markdown/Markdown.kt",
+                line = 308,
+                label =
+                    "RenderBlock inside LazyColumn lambda " +
+                        "(MaybeSelectable content — indirect SC)",
+            ),
+            SmokeCase(
+                relative =
+                    "platform/jewel/markdown/core/src/main/kotlin/org/jetbrains/jewel/markdown/Markdown.kt",
+                line = 337,
+                label = "movableContent inside conditional SelectionContainer (direct SC)",
+            ),
+        )
 
     KotlinPsiParser().use { parser ->
         val walker = SelectionWalker()
@@ -76,14 +84,10 @@ fun main(args: Array<String>) {
                     if (ctx.disableSelection != null) {
                         appendLine("  disableSelection: ${ctx.disableSelection}")
                     }
-                },
+                }
             )
         }
     }
 }
 
-private data class SmokeCase(
-    val relative: String,
-    val line: Int,
-    val label: String,
-)
+private data class SmokeCase(val relative: String, val line: Int, val label: String)

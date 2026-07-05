@@ -14,9 +14,10 @@ object KnownWrapperConfig {
     private val json = Json { ignoreUnknownKeys = true }
 
     fun load(): List<KnownWrapperRule> =
-        javaClass.getResourceAsStream("/presets/known-wrappers.json")
+        javaClass
+            .getResourceAsStream("/presets/known-wrappers.json")
             ?.bufferedReader()
-            ?.readText()
+            ?.use { it.readText() }
             ?.let { json.decodeFromString<List<KnownWrapperRule>>(it) }
-            ?: emptyList()
+            .orEmpty()
 }

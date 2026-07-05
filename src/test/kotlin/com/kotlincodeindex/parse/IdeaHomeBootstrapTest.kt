@@ -1,10 +1,10 @@
 package com.kotlincodeindex.parse
 
+import java.nio.file.Files
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
-import java.nio.file.Files
 
 class IdeaHomeBootstrapTest {
     private val saved = mutableMapOf<String, String?>()
@@ -46,7 +46,8 @@ class IdeaHomeBootstrapTest {
     }
 
     private fun clearIdeaProperties() {
-        for (key in listOf("idea.home.path", "idea.config.path", "idea.system.path", "idea.plugins.path")) {
+        for (key in
+            listOf("idea.home.path", "idea.config.path", "idea.system.path", "idea.plugins.path")) {
             saved.putIfAbsent(key, System.getProperty(key))
             System.clearProperty(key)
         }

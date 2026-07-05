@@ -28,16 +28,18 @@ class FileHashProducerTest {
     @Test
     fun `writes file hash records for each source file`() {
         val workspace = Path("src/test/resources/fixtures/bazel")
-        val context = IndexBuildContext(
-            store = store,
-            commitHash = "abc123",
-            scope = "//plugins/foo/ui:ui",
-            sourceFiles = listOf(
-                "plugins/foo/ui/src/main/kotlin/Panel.kt",
-                "plugins/foo/ui/src/main/kotlin/Other.kt",
-            ),
-            workspaceRoot = workspace,
-        )
+        val context =
+            IndexBuildContext(
+                store = store,
+                commitHash = "abc123",
+                scope = "//plugins/foo/ui:ui",
+                sourceFiles =
+                    listOf(
+                        "plugins/foo/ui/src/main/kotlin/Panel.kt",
+                        "plugins/foo/ui/src/main/kotlin/Other.kt",
+                    ),
+                workspaceRoot = workspace,
+            )
 
         FileHashProducer().produce(context, store)
 

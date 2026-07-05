@@ -15,8 +15,7 @@ data class IndexBuildContext(
     val progress: ((String) -> Unit)? = null,
 ) {
     fun readSource(relativePath: String): String =
-        sourceContentOverrides[relativePath]
-            ?: workspaceRoot.resolve(relativePath).readText()
+        sourceContentOverrides[relativePath] ?: workspaceRoot.resolve(relativePath).readText()
 
     fun reportFileProgress(index: Int, total: Int, relativePath: String) {
         progress?.invoke("[$index/$total] $relativePath")
@@ -28,12 +27,13 @@ data class IndexBuildContext(
             commitHash: String,
             sourceFiles: Map<String, String>,
             scope: String = "",
-        ): IndexBuildContext = IndexBuildContext(
-            store = store,
-            commitHash = commitHash,
-            scope = scope,
-            sourceFiles = sourceFiles.keys.toList(),
-            sourceContentOverrides = sourceFiles,
-        )
+        ): IndexBuildContext =
+            IndexBuildContext(
+                store = store,
+                commitHash = commitHash,
+                scope = scope,
+                sourceFiles = sourceFiles.keys.toList(),
+                sourceContentOverrides = sourceFiles,
+            )
     }
 }

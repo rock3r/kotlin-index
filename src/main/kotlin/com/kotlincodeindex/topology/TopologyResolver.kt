@@ -21,17 +21,22 @@ object TopologyResolver {
         bazelProcessRunner: BazelProcessRunner? = null,
         onStderr: (String) -> Unit = {},
     ): TopologyResult {
-        val effective: BuildSystem = when (request.buildSystem) {
-            BuildSystem.AUTO -> BuildSystemDetector.detect(project)
-                ?: error("Cannot detect build system: no MODULE.bazel/WORKSPACE or settings.gradle(.kts)")
-            BuildSystem.BAZEL -> BuildSystem.BAZEL
-            BuildSystem.GRADLE -> BuildSystem.GRADLE
-        }
+        val effective: BuildSystem =
+            when (request.buildSystem) {
+                BuildSystem.AUTO ->
+                    BuildSystemDetector.detect(project)
+                        ?: error(
+                            "Cannot detect build system: no MODULE.bazel/WORKSPACE or settings.gradle(.kts)"
+                        )
+                BuildSystem.BAZEL -> BuildSystem.BAZEL
+                BuildSystem.GRADLE -> BuildSystem.GRADLE
+            }
         return when (effective) {
             BuildSystem.BAZEL -> {
-                val target = requireNotNull(request.bazelTarget) {
-                    "--bazel-target is required for Bazel topology"
-                }
+                val target =
+                    requireNotNull(request.bazelTarget) {
+                        "--bazel-target is required for Bazel topology"
+                    }
                 BazelTopology.resolveSources(
                     target,
                     project,
@@ -41,9 +46,10 @@ object TopologyResolver {
                 )
             }
             BuildSystem.GRADLE -> {
-                val module = requireNotNull(request.gradleModule) {
-                    "--gradle-module is required for Gradle topology"
-                }
+                val module =
+                    requireNotNull(request.gradleModule) {
+                        "--gradle-module is required for Gradle topology"
+                    }
                 GradleTopology.resolveSources(module, project, request.includeDeps, onStderr)
             }
             BuildSystem.AUTO -> error("unreachable")

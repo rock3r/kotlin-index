@@ -21,10 +21,7 @@ class GradleTopologyTest {
         val result = GradleTopology.resolveSources(":ui", fixtureRoot, includeDeps = true)
         assertTrue(result.includeDeps)
         assertEquals(
-            listOf(
-                "core/src/main/kotlin/Core.kt",
-                "ui/src/main/kotlin/Panel.kt",
-            ),
+            listOf("core/src/main/kotlin/Core.kt", "ui/src/main/kotlin/Panel.kt"),
             result.sourceFiles,
         )
     }

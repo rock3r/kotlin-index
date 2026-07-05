@@ -27,7 +27,11 @@ object IdeaHomeBootstrap {
         val cacheRoot = Path.of(System.getProperty("user.home"), ".kotlin-index", "idea-home")
         cacheRoot.createDirectories()
         val marker = cacheRoot.resolve(MARKER)
-        if (marker.exists() && cacheRoot.isDirectory() && SUBDIRS.all { cacheRoot.resolve(it).isDirectory() }) {
+        if (
+            marker.exists() &&
+                cacheRoot.isDirectory() &&
+                SUBDIRS.all { cacheRoot.resolve(it).isDirectory() }
+        ) {
             return cacheRoot
         }
 
@@ -36,8 +40,9 @@ object IdeaHomeBootstrap {
             val destDir = cacheRoot.resolve(subdir)
             destDir.createDirectories()
             val resourcePath = "${RESOURCE_PREFIX}$subdir/.keep"
-            val stream = classLoader.getResourceAsStream(resourcePath)
-                ?: error("Bundled $resourcePath not found on classpath — rebuild shadow JAR")
+            val stream =
+                classLoader.getResourceAsStream(resourcePath)
+                    ?: error("Bundled $resourcePath not found on classpath — rebuild shadow JAR")
             stream.use { input ->
                 Files.copy(input, destDir.resolve(".keep"), StandardCopyOption.REPLACE_EXISTING)
             }

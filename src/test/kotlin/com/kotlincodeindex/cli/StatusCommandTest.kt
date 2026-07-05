@@ -1,9 +1,7 @@
 package com.kotlincodeindex.cli
 
-import com.kotlincodeindex.core.manifest.IndexManifest
-import com.kotlincodeindex.core.manifest.ManifestIO
-import com.kotlincodeindex.core.path.IndexPathResolver
 import com.kotlincodeindex.topology.bazel.MockBazelQueryExecutor
+import java.nio.file.Files
 import kotlin.io.path.Path
 import kotlin.io.path.createTempDirectory
 import kotlin.io.path.readText
@@ -11,7 +9,6 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import java.nio.file.Files
 
 class StatusCommandTest {
     private val tempDirs = mutableListOf<java.nio.file.Path>()
@@ -25,24 +22,26 @@ class StatusCommandTest {
     @Test
     fun `status reports fresh after index`() {
         val workspace = createGitWorkspace()
-        val mockOutput = Path("src/test/resources/fixtures/bazel/mock-query-output.txt")
-            .readText()
-            .lines()
+        val mockOutput =
+            Path("src/test/resources/fixtures/bazel/mock-query-output.txt").readText().lines()
 
-        IndexCommand().runIndexedBuild(
-            project = workspace,
-            bazelTarget = "//plugins/foo/ui:ui",
-            applications = listOf("selection-context"),
-            queryExecutor = MockBazelQueryExecutor(mockOutput),
-        )
+        IndexCommand()
+            .runIndexedBuild(
+                project = workspace,
+                bazelTarget = "//plugins/foo/ui:ui",
+                applications = listOf("selection-context"),
+                queryExecutor = MockBazelQueryExecutor(mockOutput),
+            )
 
         val output = StringBuilder()
-        val exitCode = StatusCommand().runStatus(
-            project = workspace,
-            bazelTarget = "//plugins/foo/ui:ui",
-            queryExecutor = MockBazelQueryExecutor(mockOutput),
-            output = { output.appendLine(it) },
-        )
+        val exitCode =
+            StatusCommand()
+                .runStatus(
+                    project = workspace,
+                    bazelTarget = "//plugins/foo/ui:ui",
+                    queryExecutor = MockBazelQueryExecutor(mockOutput),
+                    output = { output.appendLine(it) },
+                )
 
         assertEquals(0, exitCode)
         val text = output.toString()
@@ -55,12 +54,14 @@ class StatusCommandTest {
     fun `status reports missing index`() {
         val workspace = createGitWorkspace()
         val output = StringBuilder()
-        val exitCode = StatusCommand().runStatus(
-            project = workspace,
-            bazelTarget = "//plugins/foo/ui:ui",
-            queryExecutor = MockBazelQueryExecutor(emptyList()),
-            output = { output.appendLine(it) },
-        )
+        val exitCode =
+            StatusCommand()
+                .runStatus(
+                    project = workspace,
+                    bazelTarget = "//plugins/foo/ui:ui",
+                    queryExecutor = MockBazelQueryExecutor(emptyList()),
+                    output = { output.appendLine(it) },
+                )
         assertEquals(CliExitCodes.ANALYSIS_ERROR, exitCode)
         assertTrue(output.toString().contains("\"indexed\":false"))
     }
@@ -88,9 +89,10 @@ class StatusCommandTest {
     }
 
     private fun runGit(workspace: java.nio.file.Path, vararg args: String) {
-        val process = ProcessBuilder(*listOf("git", "-C", workspace.toString(), *args).toTypedArray())
-            .redirectErrorStream(true)
-            .start()
+        val process =
+            ProcessBuilder(*listOf("git", "-C", workspace.toString(), *args).toTypedArray())
+                .redirectErrorStream(true)
+                .start()
         val result = process.inputStream.bufferedReader().readText()
         check(process.waitFor() == 0) { "git failed: $result" }
     }

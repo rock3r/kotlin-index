@@ -11,15 +11,14 @@ import com.kotlincodeindex.application.selectioncontext.SelectionContextQuerySer
 import com.kotlincodeindex.core.git.GitHeadResolver
 import com.kotlincodeindex.core.manifest.ManifestIO
 import com.kotlincodeindex.core.path.IndexPathResolver
-import kotlin.io.path.exists
 import com.kotlincodeindex.core.store.CodeIndexStore
 import com.kotlincodeindex.core.store.IndexStoreOpener
 import java.nio.file.Path
+import kotlin.io.path.exists
 
 class QueryCommand : CliktCommand(name = "query") {
-    private val project by option("--project")
-        .file(mustExist = true, mustBeReadable = true)
-        .required()
+    private val project by
+        option("--project").file(mustExist = true, mustBeReadable = true).required()
     private val application by option("--application").required()
     private val preset by option("--preset")
     private val format by option("--format").default("jsonl")
@@ -65,15 +64,16 @@ class QueryCommand : CliktCommand(name = "query") {
         try {
             when (application) {
                 "selection-context" -> {
-                    val lines = selectionContextJsonl(
-                        store = store,
-                        preset = preset,
-                        file = file,
-                        line = line,
-                        column = column,
-                        scopeTarget = manifest.scope,
-                        scopeTopology = manifest.topology,
-                    )
+                    val lines =
+                        selectionContextJsonl(
+                            store = store,
+                            preset = preset,
+                            file = file,
+                            line = line,
+                            column = column,
+                            scopeTarget = manifest.scope,
+                            scopeTopology = manifest.topology,
+                        )
                     lines.forEach(output)
                 }
                 else -> error("Unknown application: $application")
@@ -84,22 +84,15 @@ class QueryCommand : CliktCommand(name = "query") {
         return 0
     }
 
-    private fun validateArgs(
-        preset: String?,
-        file: String?,
-        line: Int?,
-        format: String,
-    ) {
+    private fun validateArgs(preset: String?, file: String?, line: Int?, format: String) {
         val hasPointQuery = file != null || line != null
         when {
             hasPointQuery && (file == null || line == null) ->
                 error("Point query requires both --file and --line")
-            !hasPointQuery && preset == null ->
-                error("Preset query requires --preset")
+            !hasPointQuery && preset == null -> error("Preset query requires --preset")
             hasPointQuery && preset != null ->
                 error("Specify either --preset or --file/--line, not both")
-            format != "jsonl" ->
-                error("Only jsonl format is supported")
+            format != "jsonl" -> error("Only jsonl format is supported")
         }
     }
 
@@ -112,16 +105,18 @@ class QueryCommand : CliktCommand(name = "query") {
         scopeTarget: String,
         scopeTopology: String,
     ): List<String> {
-        val service = SelectionContextQueryService(
-            store = store,
-            scopeTarget = scopeTarget,
-            scopeTopology = scopeTopology,
-        )
-        val rows = if (file != null && line != null) {
-            service.queryPoint(file, line, column)
-        } else {
-            service.queryPreset(checkNotNull(preset))
-        }
+        val service =
+            SelectionContextQueryService(
+                store = store,
+                scopeTarget = scopeTarget,
+                scopeTopology = scopeTopology,
+            )
+        val rows =
+            if (file != null && line != null) {
+                service.queryPoint(file, line, column)
+            } else {
+                service.queryPreset(checkNotNull(preset))
+            }
         return SelectionContextJsonlFormatter.formatLines(rows)
     }
 }

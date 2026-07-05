@@ -4,6 +4,8 @@ clikt = "5.0.2"
 serialization = "1.8.0"
 shadow = "8.3.6"
 xodus = "2.0.1"
+detekt = "2.0.0-alpha.2"
+ktfmt = "0.26.0"
 
 [libraries]
 kotlin-compiler-embeddable = { module = "org.jetbrains.kotlin:kotlin-compiler-embeddable", version.ref = "kotlin" }
@@ -15,3 +17,5 @@ xodus-environment = { module = "org.jetbrains.xodus:xodus-environment", version.
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
+detekt = { id = "dev.detekt", version.ref = "detekt" }
+ktfmt = { id = "com.ncorti.ktfmt.gradle", version.ref = "ktfmt" }

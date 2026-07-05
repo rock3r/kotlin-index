@@ -34,8 +34,8 @@
 
 ```bash
 ./gradlew test
-./gradlew check
+./gradlew check          # tests + detekt + ktfmt
+./gradlew ktfmtFormat    # apply ktfmt to main, test, and Gradle scripts
 ```
 
-Add format/lint tasks here when introduced; do not wire Detekt into this repo unless explicitly
-requested.
+Add format/lint tasks here when introduced; `./gradlew check` runs tests, detekt, and ktfmt.

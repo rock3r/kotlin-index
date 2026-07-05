@@ -3,21 +3,15 @@ package com.kotlincodeindex.core.record
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-@Serializable
-sealed interface CodeIndexRecord
+@Serializable sealed interface CodeIndexRecord
 
 @Serializable
 @SerialName("meta_indexer_version")
-data class MetaIndexerVersionRecord(
-    val version: String,
-) : CodeIndexRecord
+data class MetaIndexerVersionRecord(val version: String) : CodeIndexRecord
 
 @Serializable
 @SerialName("file_hash")
-data class FileHashRecord(
-    val relativePath: String,
-    val contentHash: String,
-) : CodeIndexRecord
+data class FileHashRecord(val relativePath: String, val contentHash: String) : CodeIndexRecord
 
 @Serializable
 @SerialName("symbol")
@@ -40,18 +34,9 @@ data class ReferenceRecord(
 ) : CodeIndexRecord
 
 @Serializable
-data class SelectionContainerRef(
-    val file: String,
-    val line: Int,
-    val function: String,
-)
+data class SelectionContainerRef(val file: String, val line: Int, val function: String)
 
-@Serializable
-data class DisableSelectionRef(
-    val file: String,
-    val line: Int,
-    val function: String,
-)
+@Serializable data class DisableSelectionRef(val file: String, val line: Int, val function: String)
 
 @Serializable
 @SerialName("compose_selection_site")

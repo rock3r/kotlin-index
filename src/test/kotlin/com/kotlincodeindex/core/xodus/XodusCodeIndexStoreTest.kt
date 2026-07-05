@@ -49,18 +49,9 @@ class XodusCodeIndexStoreTest {
         val key2 = CodeIndexKey.composeSelectionSite("ui/Panel.kt", 20, 1)
         val keyOther = CodeIndexKey.composeSelectionSite("ui/Other.kt", 10, 1)
 
-        store.put(
-            key2,
-            composeRecord("Later"),
-        )
-        store.put(
-            key1,
-            composeRecord("Earlier"),
-        )
-        store.put(
-            keyOther,
-            composeRecord("Other"),
-        )
+        store.put(key2, composeRecord("Later"))
+        store.put(key1, composeRecord("Earlier"))
+        store.put(keyOther, composeRecord("Other"))
 
         val scanned = store.prefixScan(prefix).toList()
         assertEquals(2, scanned.size)
@@ -75,8 +66,7 @@ class XodusCodeIndexStoreTest {
             inSelectionContainer = true,
             selectionContainerCount = 1,
             excludedByDisableSelection = false,
-            selectionContainers = listOf(
-                SelectionContainerRef(file = "ui/Panel.kt", line = 5, function = "Panel"),
-            ),
+            selectionContainers =
+                listOf(SelectionContainerRef(file = "ui/Panel.kt", line = 5, function = "Panel")),
         )
 }

@@ -12,10 +12,10 @@ object GradleTopology {
         includeDeps: Boolean = false,
         onStderr: (String) -> Unit = { System.err.println(it) },
     ): TopologyResult {
-        val settingsFile = listOf("settings.gradle.kts", "settings.gradle")
-            .map { workspace.resolve(it) }
-            .firstOrNull { it.exists() }
-            ?: error("No settings.gradle(.kts) in $workspace")
+        val settingsFile =
+            listOf("settings.gradle.kts", "settings.gradle")
+                .map { workspace.resolve(it) }
+                .firstOrNull { it.exists() } ?: error("No settings.gradle(.kts) in $workspace")
 
         val includes = SettingsParser.parseIncludes(settingsFile.readText())
         if (includes.isEmpty()) {
@@ -28,21 +28,23 @@ object GradleTopology {
         }
 
         val graph = GradleModuleGraph(workspace, includes)
-        val modules = if (normalizedModule == ":") {
-            includes
-        } else {
-            graph.closure(normalizedModule, includeDeps)
-        }
-
-        val sourceFiles = modules
-            .flatMap { module ->
-                ModuleSourceRoots.collectKotlinSources(
-                    ModuleSourceRoots.moduleDirectory(workspace, module),
-                    workspace,
-                )
+        val modules =
+            if (normalizedModule == ":") {
+                includes
+            } else {
+                graph.closure(normalizedModule, includeDeps)
             }
-            .distinct()
-            .sorted()
+
+        val sourceFiles =
+            modules
+                .flatMap { module ->
+                    ModuleSourceRoots.collectKotlinSources(
+                        ModuleSourceRoots.moduleDirectory(workspace, module),
+                        workspace,
+                    )
+                }
+                .distinct()
+                .sorted()
 
         return TopologyResult(
             sourceFiles = sourceFiles,
@@ -52,6 +54,5 @@ object GradleTopology {
         )
     }
 
-    fun normalizeModule(raw: String): String =
-        if (raw.startsWith(":")) raw else ":$raw"
+    fun normalizeModule(raw: String): String = if (raw.startsWith(":")) raw else ":$raw"
 }

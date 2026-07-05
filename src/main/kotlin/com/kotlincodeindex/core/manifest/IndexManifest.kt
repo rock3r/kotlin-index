@@ -1,9 +1,9 @@
 package com.kotlincodeindex.core.manifest
 
-import kotlinx.serialization.Serializable
 import java.nio.file.Path
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
+import kotlinx.serialization.Serializable
 
 @Serializable
 data class IndexManifest(
@@ -19,10 +19,11 @@ data class IndexManifest(
 )
 
 object ManifestIO {
-    private val json = kotlinx.serialization.json.Json {
-        encodeDefaults = true
-        ignoreUnknownKeys = true
-    }
+    private val json =
+        kotlinx.serialization.json.Json {
+            encodeDefaults = true
+            ignoreUnknownKeys = true
+        }
 
     fun read(path: Path): IndexManifest =
         json.decodeFromString(IndexManifest.serializer(), path.readText())

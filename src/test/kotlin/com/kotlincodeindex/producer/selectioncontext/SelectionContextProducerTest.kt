@@ -9,8 +9,6 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
 
 class SelectionContextProducerTest {
     private lateinit var store: XodusCodeIndexStore
@@ -31,12 +29,13 @@ class SelectionContextProducerTest {
     @Test
     fun `indexes all fixture call sites with golden keys and records`() {
         val overrides = fixtureSourceFiles()
-        val context = IndexBuildContext(
-            store = store,
-            commitHash = commitHash,
-            sourceFiles = overrides.keys.toList(),
-            sourceContentOverrides = overrides,
-        )
+        val context =
+            IndexBuildContext(
+                store = store,
+                commitHash = commitHash,
+                sourceFiles = overrides.keys.toList(),
+                sourceContentOverrides = overrides,
+            )
         SelectionContextProducer().produce(context)
 
         val allKeys = store.prefixScan("compose:selection-site:").toList()
@@ -98,12 +97,13 @@ class SelectionContextProducerTest {
             ),
         )
 
-        val context = IndexBuildContext(
-            store = store,
-            commitHash = commitHash,
-            sourceFiles = listOf("nested-sc.kt"),
-            sourceContentOverrides = mapOf("nested-sc.kt" to fixture("nested-sc.kt")),
-        )
+        val context =
+            IndexBuildContext(
+                store = store,
+                commitHash = commitHash,
+                sourceFiles = listOf("nested-sc.kt"),
+                sourceContentOverrides = mapOf("nested-sc.kt" to fixture("nested-sc.kt")),
+            )
         SelectionContextProducer().produce(context)
 
         assertEquals(null, store.get(staleKey))
@@ -124,12 +124,13 @@ class SelectionContextProducerTest {
             ),
         )
 
-        val context = IndexBuildContext(
-            store = store,
-            commitHash = commitHash,
-            sourceFiles = listOf("nested-sc.kt"),
-            sourceContentOverrides = mapOf("nested-sc.kt" to fixture("nested-sc.kt")),
-        )
+        val context =
+            IndexBuildContext(
+                store = store,
+                commitHash = commitHash,
+                sourceFiles = listOf("nested-sc.kt"),
+                sourceContentOverrides = mapOf("nested-sc.kt" to fixture("nested-sc.kt")),
+            )
         SelectionContextProducer().produce(context)
 
         assertEquals(null, store.get(otherFileKey))
@@ -158,15 +159,20 @@ class SelectionContextProducerTest {
 
     private fun fixtureSourceFiles(): Map<String, String> =
         listOf(
-            "nested-sc.kt",
-            "disable-selection.kt",
-            "no-sc.kt",
-            "local-helper.kt",
-            "import-alias.kt",
-        ).associateWith { fixture(it) }
+                "nested-sc.kt",
+                "disable-selection.kt",
+                "no-sc.kt",
+                "local-helper.kt",
+                "import-alias.kt",
+            )
+            .associateWith { fixture(it) }
 
     private fun fixture(name: String): String =
-        checkNotNull(javaClass.classLoader.getResourceAsStream("fixtures/selection-context/$name")) {
-            "Missing fixture: $name"
-        }.bufferedReader().readText()
+        checkNotNull(
+                javaClass.classLoader.getResourceAsStream("fixtures/selection-context/$name")
+            ) {
+                "Missing fixture: $name"
+            }
+            .bufferedReader()
+            .readText()
 }

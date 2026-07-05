@@ -1,6 +1,7 @@
 package com.kotlincodeindex.cli
 
 import com.github.ajalt.clikt.core.CliktCommand
+import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
@@ -27,31 +28,30 @@ import java.time.Instant
 import kotlin.io.path.exists
 
 class IndexCommand : CliktCommand(name = "index") {
-    private val project by option("--project")
-        .file(mustExist = true, mustBeReadable = true)
-        .required()
+    private val project by
+        option("--project").file(mustExist = true, mustBeReadable = true).required()
     private val buildSystem by option("--build-system").default("auto")
     private val bazelTarget by option("--bazel-target")
     private val gradleModule by option("--gradle-module")
     private val includeDeps by option("--include-deps").flag(default = false)
-    private val applications by option("--applications")
-        .split(",")
-        .default(emptyList())
+    private val applications by option("--applications").split(",").default(emptyList())
 
     override fun run() {
-        val exitCode = runIndexedBuild(
-            project = project.toPath(),
-            topologyRequest = TopologyRequest(
-                buildSystem = parseBuildSystem(buildSystem),
-                bazelTarget = bazelTarget,
-                gradleModule = gradleModule,
-                includeDeps = includeDeps,
-            ),
-            applications = applications.filter { it.isNotBlank() },
-            progress = { echo(it, err = true) },
-        )
+        val exitCode =
+            runIndexedBuild(
+                project = project.toPath(),
+                topologyRequest =
+                    TopologyRequest(
+                        buildSystem = parseBuildSystem(buildSystem),
+                        bazelTarget = bazelTarget,
+                        gradleModule = gradleModule,
+                        includeDeps = includeDeps,
+                    ),
+                applications = applications.filter { it.isNotBlank() },
+                progress = { echo(it, err = true) },
+            )
         if (exitCode != CliExitCodes.SUCCESS) {
-            throw RuntimeException("index failed with exit code $exitCode")
+            throw ProgramResult(exitCode)
         }
     }
 
@@ -62,17 +62,16 @@ class IndexCommand : CliktCommand(name = "index") {
         queryExecutor: BazelQueryExecutor? = null,
         processRunner: BazelProcessRunner? = null,
         progress: (String) -> Unit = {},
-    ): Int = runIndexedBuild(
-        project = project,
-        topologyRequest = TopologyRequest(
-            buildSystem = BuildSystem.BAZEL,
-            bazelTarget = bazelTarget,
-        ),
-        applications = applications,
-        bazelQueryExecutor = queryExecutor,
-        bazelProcessRunner = processRunner,
-        progress = progress,
-    )
+    ): Int =
+        runIndexedBuild(
+            project = project,
+            topologyRequest =
+                TopologyRequest(buildSystem = BuildSystem.BAZEL, bazelTarget = bazelTarget),
+            applications = applications,
+            bazelQueryExecutor = queryExecutor,
+            bazelProcessRunner = processRunner,
+            progress = progress,
+        )
 
     fun runIndexedBuild(
         project: Path,
@@ -82,13 +81,14 @@ class IndexCommand : CliktCommand(name = "index") {
         bazelProcessRunner: BazelProcessRunner? = null,
         progress: (String) -> Unit = {},
     ): Int {
-        val topologyResult = TopologyResolver.resolve(
-            project = project,
-            request = topologyRequest,
-            bazelQueryExecutor = bazelQueryExecutor,
-            bazelProcessRunner = bazelProcessRunner,
-            onStderr = progress,
-        )
+        val topologyResult =
+            TopologyResolver.resolve(
+                project = project,
+                request = topologyRequest,
+                bazelQueryExecutor = bazelQueryExecutor,
+                bazelProcessRunner = bazelProcessRunner,
+                onStderr = progress,
+            )
         if (topologyResult.sourceFiles.isEmpty()) {
             progress("topology discovery failed: no source files")
             return CliExitCodes.TOPOLOGY_FAILED
@@ -101,12 +101,13 @@ class IndexCommand : CliktCommand(name = "index") {
         val manifestPath = resolver.resolveManifest(commit)
 
         val previewHash = FileHashProducer.combinedSourcesHash(project, sourceFiles)
-        val criteria = ManifestFreshness.criteriaFrom(
-            commit = commit,
-            scope = scope,
-            sourcesContentHash = previewHash,
-            applications = applications,
-        )
+        val criteria =
+            ManifestFreshness.criteriaFrom(
+                commit = commit,
+                scope = scope,
+                sourcesContentHash = previewHash,
+                applications = applications,
+            )
 
         if (manifestPath.exists()) {
             val existing = ManifestIO.read(manifestPath)
@@ -118,14 +119,15 @@ class IndexCommand : CliktCommand(name = "index") {
 
         val store = XodusCodeIndexStore.open(resolver.resolveBaseStore(commit))
         try {
-            val context = IndexBuildContext(
-                store = store,
-                commitHash = commit,
-                scope = scope,
-                sourceFiles = sourceFiles,
-                workspaceRoot = project,
-                progress = progress,
-            )
+            val context =
+                IndexBuildContext(
+                    store = store,
+                    commitHash = commit,
+                    scope = scope,
+                    sourceFiles = sourceFiles,
+                    workspaceRoot = project,
+                    progress = progress,
+                )
             for (producer in ProducerRegistry.forApplications(applications)) {
                 progress(producer.displayName)
                 producer.produce(context, store)

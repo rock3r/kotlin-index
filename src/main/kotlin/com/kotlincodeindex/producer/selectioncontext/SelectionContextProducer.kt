@@ -16,9 +16,8 @@ import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtSimpleNameExpression
 
-class SelectionContextProducer(
-    private val walker: SelectionWalker = SelectionWalker(),
-) : IndexProducer {
+class SelectionContextProducer(private val walker: SelectionWalker = SelectionWalker()) :
+    IndexProducer {
     override val id: String = "selection-context"
     override val displayName: String = "SelectionContextProducer"
 
@@ -42,12 +41,14 @@ class SelectionContextProducer(
                             inSelectionContainer = contextResult.inSelectionContainer,
                             selectionContainerCount = contextResult.selectionContainerCount,
                             excludedByDisableSelection = contextResult.excludedByDisableSelection,
-                            selectionContainers = contextResult.selectionContainers.map {
-                                SelectionContainerRef(it.file, it.line, it.function)
-                            },
-                            disableSelection = contextResult.disableSelection?.let {
-                                DisableSelectionRef(it.file, it.line, it.function)
-                            },
+                            selectionContainers =
+                                contextResult.selectionContainers.map {
+                                    SelectionContainerRef(it.file, it.line, it.function)
+                                },
+                            disableSelection =
+                                contextResult.disableSelection?.let {
+                                    DisableSelectionRef(it.file, it.line, it.function)
+                                },
                             confidence = contextResult.confidence,
                             indexedFromCommit = context.commitHash,
                         ),
@@ -58,8 +59,7 @@ class SelectionContextProducer(
     }
 
     private fun deleteAllSelectionSiteKeys(store: CodeIndexStore) {
-        store.prefixScan("compose:selection-site:")
-            .forEach { (key, _) -> store.delete(key) }
+        store.prefixScan("compose:selection-site:").forEach { (key, _) -> store.delete(key) }
     }
 
     private fun deleteStaleKeys(store: CodeIndexStore, relativeFile: String) {
@@ -73,35 +73,39 @@ class SelectionContextProducer(
         val scAliases = resolveAliases(file, scNames)
         val dsAliases = resolveAliases(file, dsNames)
 
-        return file.collectDescendantsOfType<KtCallExpression>()
+        return file
+            .collectDescendantsOfType<KtCallExpression>()
             .mapNotNull { call -> findEnclosingComposable(call)?.let { call to it } }
             .filter { (call, enclosing) ->
                 val name = extractCalleeName(call) ?: return@filter false
-                name !in scAliases && name !in dsAliases && !isLocalNonComposableCall(call, enclosing, name)
+                name !in scAliases &&
+                    name !in dsAliases &&
+                    !isLocalNonComposableCall(enclosing, name)
             }
             .map { it.first }
     }
 
     private fun isLocalNonComposableCall(
-        call: KtCallExpression,
         enclosingComposable: KtNamedFunction,
         calleeName: String,
     ): Boolean {
         val body = enclosingComposable.bodyExpression ?: return false
-        return body.collectDescendantsOfType<KtNamedFunction>()
-            .any { fn ->
-                fn.name == calleeName &&
-                    !fn.annotationEntries.any {
-                        it.shortName?.asString() == SelectionWalker.COMPOSABLE_ANNOTATION
-                    }
-            }
+        return body.collectDescendantsOfType<KtNamedFunction>().any { fn ->
+            fn.name == calleeName &&
+                !fn.annotationEntries.any {
+                    it.shortName?.asString() == SelectionWalker.COMPOSABLE_ANNOTATION
+                }
+        }
     }
 
     private fun findEnclosingComposable(call: KtCallExpression): KtNamedFunction? {
         var current: PsiElement? = call.parent
         while (current != null) {
-            if (current is KtNamedFunction &&
-                current.annotationEntries.any { it.shortName?.asString() == SelectionWalker.COMPOSABLE_ANNOTATION }
+            if (
+                current is KtNamedFunction &&
+                    current.annotationEntries.any {
+                        it.shortName?.asString() == SelectionWalker.COMPOSABLE_ANNOTATION
+                    }
             ) {
                 return current
             }
@@ -112,12 +116,11 @@ class SelectionContextProducer(
 
     private fun resolveAliases(file: KtFile, canonicalNames: Set<String>): Set<String> {
         val names = canonicalNames.toMutableSet()
-        for (import in file.importDirectives) {
-            val importedName = import.importedFqName?.shortName()?.asString() ?: continue
-            if (importedName !in canonicalNames) {
-                continue
+        file.importDirectives.forEach { import ->
+            val importedName = import.importedFqName?.shortName()?.asString() ?: return@forEach
+            if (importedName in canonicalNames) {
+                import.aliasName?.let { names += it }
             }
-            import.aliasName?.let { names += it }
         }
         return names
     }
@@ -133,29 +136,32 @@ class SelectionContextProducer(
     }
 
     private fun KtCallExpression.lineNumber(): Int {
-        val doc = containingFile.viewProvider.document
-            ?: error("No document for ${containingFile.name}")
+        val doc =
+            containingFile.viewProvider.document ?: error("No document for ${containingFile.name}")
         return doc.getLineNumber(textRange.startOffset) + 1
     }
 
     private fun KtCallExpression.columnNumber(): Int {
-        val doc = containingFile.viewProvider.document
-            ?: error("No document for ${containingFile.name}")
+        val doc =
+            containingFile.viewProvider.document ?: error("No document for ${containingFile.name}")
         val line = doc.getLineNumber(textRange.startOffset)
         val lineStart = doc.getLineStartOffset(line)
         return textRange.startOffset - lineStart + 1
     }
 }
 
-private inline fun <reified T> org.jetbrains.kotlin.psi.KtElement.collectDescendantsOfType(): List<T> {
+private inline fun <reified T> org.jetbrains.kotlin.psi.KtElement.collectDescendantsOfType():
+    List<T> {
     val results = mutableListOf<T>()
-    accept(object : org.jetbrains.kotlin.com.intellij.psi.PsiElementVisitor() {
-        override fun visitElement(element: org.jetbrains.kotlin.com.intellij.psi.PsiElement) {
-            if (element is T) {
-                results += element
+    accept(
+        object : org.jetbrains.kotlin.com.intellij.psi.PsiElementVisitor() {
+            override fun visitElement(element: org.jetbrains.kotlin.com.intellij.psi.PsiElement) {
+                if (element is T) {
+                    results += element
+                }
+                element.acceptChildren(this)
             }
-            element.acceptChildren(this)
         }
-    })
+    )
     return results
 }

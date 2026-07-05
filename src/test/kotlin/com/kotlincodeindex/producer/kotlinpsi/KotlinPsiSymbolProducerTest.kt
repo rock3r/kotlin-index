@@ -29,25 +29,30 @@ class KotlinPsiSymbolProducerTest {
 
     @Test
     fun `indexes symbols and references from fixture sources`() {
-        val panel = """
+        val panel =
+            """
             @Composable
             fun Panel() {
                 ActionButton()
             }
             @Composable
             fun ActionButton() {}
-        """.trimIndent()
-        val context = IndexBuildContext.forInlineSources(
-            store = store,
-            commitHash = "abc",
-            sourceFiles = mapOf("Panel.kt" to panel),
-        )
+            """
+                .trimIndent()
+        val context =
+            IndexBuildContext.forInlineSources(
+                store = store,
+                commitHash = "abc",
+                sourceFiles = mapOf("Panel.kt" to panel),
+            )
         ProducerRegistry.get("kotlin-psi-symbols")!!.produce(context, store)
 
-        val symbols = store.prefixScan("sym:").map { it.second }.filterIsInstance<SymbolRecord>().toList()
+        val symbols =
+            store.prefixScan("sym:").map { it.second }.filterIsInstance<SymbolRecord>().toList()
         assertTrue(symbols.any { it.name == "ActionButton" && it.kind == "function" })
 
-        val refs = store.prefixScan("ref:").map { it.second }.filterIsInstance<ReferenceRecord>().toList()
+        val refs =
+            store.prefixScan("ref:").map { it.second }.filterIsInstance<ReferenceRecord>().toList()
         assertEquals(1, refs.size)
         assertTrue(refs[0].symbolFqn.contains("ActionButton"))
     }

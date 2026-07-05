@@ -1,26 +1,47 @@
 // SPDX-License-Identifier: UEL-1.0
 
+import dev.detekt.gradle.Detekt
+import dev.detekt.gradle.DetektCreateBaselineTask
+
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization)
     application
     alias(libs.plugins.shadow)
+    alias(libs.plugins.detekt)
+    alias(libs.plugins.ktfmt)
 }
 
 group = "com.kotlincodeindex"
+
 version = "0.1.0-SNAPSHOT"
 
-kotlin {
-    jvmToolchain(21)
+kotlin { jvmToolchain(21) }
+
+ktfmt { kotlinLangStyle() }
+
+detekt {
+    buildUponDefaultConfig = true
+    config.setFrom(files("detekt.yml"))
 }
 
-sourceSets.main {
-    resources.srcDir("config")
-}
+val generatedSourceExcludes = arrayOf("**/build/**", "**/generated/**")
 
-repositories {
-    mavenCentral()
-}
+tasks.withType<Detekt>().configureEach { exclude(*generatedSourceExcludes) }
+
+tasks.withType<DetektCreateBaselineTask>().configureEach { exclude(*generatedSourceExcludes) }
+
+tasks.named<Detekt>("detektMain") { setSource(files("src/main/kotlin")) }
+
+tasks.named<Detekt>("detektTest") { setSource(files("src/test/kotlin")) }
+
+tasks
+    .matching { it.name.startsWith("ktfmtCheck") || it.name.startsWith("ktfmtFormat") }
+    .configureEach { (this as? org.gradle.api.tasks.SourceTask)?.exclude(*generatedSourceExcludes) }
+
+sourceSets.main { resources.srcDir("config") }
+
+repositories { mavenCentral() }
 
 dependencies {
     implementation(libs.kotlin.compiler.embeddable)
@@ -31,18 +52,14 @@ dependencies {
     testImplementation(kotlin("test"))
 }
 
-application {
-    mainClass.set("com.kotlincodeindex.cli.MainKt")
-}
+application { mainClass.set("com.kotlincodeindex.cli.MainKt") }
 
 tasks.shadowJar {
     archiveClassifier.set("all")
     mergeServiceFiles()
 }
 
-tasks.build {
-    dependsOn(tasks.shadowJar)
-}
+tasks.build { dependsOn(tasks.shadowJar) }
 
 tasks.register<JavaExec>("smokeSelectionWalker") {
     group = "verification"
@@ -58,11 +75,12 @@ tasks.register<JavaExec>("smokeSelectionWalker") {
     }
 }
 
-val ideaHomeDir = layout.buildDirectory.dir("idea-home").get().asFile.apply {
-    resolve("config").mkdirs()
-    resolve("system").mkdirs()
-    resolve("plugins").mkdirs()
-}
+val ideaHomeDir =
+    layout.buildDirectory.dir("idea-home").get().asFile.apply {
+        resolve("config").mkdirs()
+        resolve("system").mkdirs()
+        resolve("plugins").mkdirs()
+    }
 
 tasks.test {
     useJUnitPlatform {
@@ -74,4 +92,8 @@ tasks.test {
     systemProperty("idea.config.path", ideaHomeDir.resolve("config").absolutePath)
     systemProperty("idea.system.path", ideaHomeDir.resolve("system").absolutePath)
     systemProperty("idea.plugins.path", ideaHomeDir.resolve("plugins").absolutePath)
+}
+
+tasks.check {
+    dependsOn("detektMain", "detektTest", "ktfmtCheckMain", "ktfmtCheckScripts", "ktfmtCheckTest")
 }

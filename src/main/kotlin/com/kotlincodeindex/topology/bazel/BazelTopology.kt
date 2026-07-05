@@ -5,16 +5,14 @@ import java.nio.file.Path
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 
-data class BazelQueryResult(
-    val lines: List<String>,
-    val includeDeps: Boolean,
-)
+data class BazelQueryResult(val lines: List<String>, val includeDeps: Boolean)
 
 object BazelTopology {
-    fun defaultExecutor(onStderr: (String) -> Unit = { System.err.println(it) }): BazelQueryExecutor =
-        BazelQueryExecutor { target, workspace ->
-            queryWithFallback(target, workspace, LiveBazelProcessRunner, onStderr).lines
-        }
+    fun defaultExecutor(
+        onStderr: (String) -> Unit = { System.err.println(it) }
+    ): BazelQueryExecutor = BazelQueryExecutor { target, workspace ->
+        queryWithFallback(target, workspace, LiveBazelProcessRunner, onStderr).lines
+    }
 
     fun resolveSources(
         target: String,
@@ -65,30 +63,25 @@ object BazelTopology {
             return BazelQueryResult(primary.lines, includeDeps = true)
         }
 
-        onStderr(
-            "bazel query failed ($primaryQuery); retrying with labels(srcs, $target)",
-        )
+        onStderr("bazel query failed ($primaryQuery); retrying with labels(srcs, $target)")
         val fallbackQuery = "labels(srcs, $target)"
         val fallback = runner.run(fallbackQuery, workspace)
-        check(fallback.exitCode == 0) {
-            "bazel query failed: ${fallback.lines.joinToString("\n")}"
-        }
+        check(fallback.exitCode == 0) { "bazel query failed: ${fallback.lines.joinToString("\n")}" }
         return BazelQueryResult(fallback.lines, includeDeps = false)
     }
 
-    private fun resolveTopology(executor: BazelQueryExecutor): String = when {
-        executor is MockBazelQueryExecutor -> "bazel-query"
-        isBazelAvailable() -> "bazel-query"
-        else -> "build-parse"
-    }
+    private fun resolveTopology(executor: BazelQueryExecutor): String =
+        when {
+            executor is MockBazelQueryExecutor -> "bazel-query"
+            isBazelAvailable() -> "bazel-query"
+            else -> "build-parse"
+        }
 
     private fun isBazelAvailable(): Boolean =
         runCatching {
-            ProcessBuilder("bazel", "version")
-                .redirectErrorStream(true)
-                .start()
-                .waitFor() == 0
-        }.getOrDefault(false)
+                ProcessBuilder("bazel", "version").redirectErrorStream(true).start().waitFor() == 0
+            }
+            .getOrDefault(false)
 
     private fun degradedQuery(
         target: String,
@@ -103,11 +96,13 @@ object BazelTopology {
     ): List<String> {
         val packagePath = target.removePrefix("//").substringBefore(':')
         val packageDir = workspace.resolve(packagePath)
-        check(packageDir.isDirectory()) { "Package directory not found for target $target: $packageDir" }
-        val buildFile = sequenceOf("BUILD.bazel", "BUILD")
-            .map { packageDir.resolve(it) }
-            .firstOrNull { it.exists() }
-            ?: error("No BUILD file under $packageDir")
+        check(packageDir.isDirectory()) {
+            "Package directory not found for target $target: $packageDir"
+        }
+        val buildFile =
+            sequenceOf("BUILD.bazel", "BUILD")
+                .map { packageDir.resolve(it) }
+                .firstOrNull { it.exists() } ?: error("No BUILD file under $packageDir")
         val parseResult = BuildFileParser.parseKotlinSources(buildFile, workspace)
         parseResult.warnings.forEach(onStderr)
         if (parseResult.paths.isEmpty()) {

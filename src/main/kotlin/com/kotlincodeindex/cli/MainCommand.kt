@@ -4,6 +4,7 @@ import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.main
 import com.github.ajalt.clikt.core.subcommands
 import com.kotlincodeindex.core.Version
+
 /** Entry point for the kotlin-code-index CLI. */
 class MainCommand : CliktCommand(name = "kotlin-code-index") {
     init {

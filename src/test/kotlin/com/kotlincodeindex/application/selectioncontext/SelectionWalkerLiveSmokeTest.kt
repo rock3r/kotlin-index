@@ -51,7 +51,10 @@ class SelectionWalkerLiveSmokeTest {
         val context = analyzeLine(relative, line = 223)
 
         assertEquals("Text", context.callee)
-        assertTrue(context.inSelectionContainer, "Text in SelectableText() should be inside SelectionContainer")
+        assertTrue(
+            context.inSelectionContainer,
+            "Text in SelectableText() should be inside SelectionContainer",
+        )
         assertEquals(1, context.selectionContainerCount)
         assertFalse(context.excludedByDisableSelection)
     }
@@ -62,7 +65,10 @@ class SelectionWalkerLiveSmokeTest {
         val context = analyzeLine(relative, line = 212)
 
         assertEquals("Text", context.callee)
-        assertFalse(context.inSelectionContainer, "Label Text should not be inside SelectionContainer")
+        assertFalse(
+            context.inSelectionContainer,
+            "Label Text should not be inside SelectionContainer",
+        )
         assertEquals(0, context.selectionContainerCount)
         assertFalse(context.excludedByDisableSelection)
     }
@@ -74,7 +80,10 @@ class SelectionWalkerLiveSmokeTest {
 
         assertEquals("ComposePopup", context.callee)
         assertFalse(context.inSelectionContainer)
-        assertTrue(context.excludedByDisableSelection, "Popup content should be excluded by DisableSelection")
+        assertTrue(
+            context.excludedByDisableSelection,
+            "Popup content should be excluded by DisableSelection",
+        )
         assertEquals(206, context.disableSelection?.line)
         assertEquals("Popup", context.disableSelection?.function)
     }

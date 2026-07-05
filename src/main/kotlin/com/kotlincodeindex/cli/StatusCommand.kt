@@ -1,6 +1,7 @@
 package com.kotlincodeindex.cli
 
 import com.github.ajalt.clikt.core.CliktCommand
+import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
@@ -17,34 +18,35 @@ import com.kotlincodeindex.topology.TopologyRequest
 import com.kotlincodeindex.topology.TopologyResolver
 import com.kotlincodeindex.topology.bazel.BazelProcessRunner
 import com.kotlincodeindex.topology.bazel.BazelQueryExecutor
+import java.nio.file.Path
+import kotlin.io.path.exists
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import java.nio.file.Path
-import kotlin.io.path.exists
 
 class StatusCommand : CliktCommand(name = "status") {
-    private val project by option("--project")
-        .file(mustExist = true, mustBeReadable = true)
-        .required()
+    private val project by
+        option("--project").file(mustExist = true, mustBeReadable = true).required()
     private val buildSystem by option("--build-system").default("auto")
     private val bazelTarget by option("--bazel-target")
     private val gradleModule by option("--gradle-module")
     private val includeDeps by option("--include-deps").flag(default = false)
 
     override fun run() {
-        val exitCode = runStatus(
-            project = requireNotNull(project).toPath(),
-            topologyRequest = TopologyRequest(
-                buildSystem = parseBuildSystem(buildSystem),
-                bazelTarget = bazelTarget,
-                gradleModule = gradleModule,
-                includeDeps = includeDeps,
-            ),
-            output = { echo(it) },
-        )
+        val exitCode =
+            runStatus(
+                project = requireNotNull(project).toPath(),
+                topologyRequest =
+                    TopologyRequest(
+                        buildSystem = parseBuildSystem(buildSystem),
+                        bazelTarget = bazelTarget,
+                        gradleModule = gradleModule,
+                        includeDeps = includeDeps,
+                    ),
+                output = { echo(it) },
+            )
         if (exitCode != CliExitCodes.SUCCESS) {
-            throw RuntimeException("status failed with exit code $exitCode")
+            throw ProgramResult(exitCode)
         }
     }
 
@@ -54,16 +56,15 @@ class StatusCommand : CliktCommand(name = "status") {
         queryExecutor: BazelQueryExecutor? = null,
         processRunner: BazelProcessRunner? = null,
         output: (String) -> Unit = {},
-    ): Int = runStatus(
-        project = project,
-        topologyRequest = TopologyRequest(
-            buildSystem = BuildSystem.BAZEL,
-            bazelTarget = bazelTarget,
-        ),
-        bazelQueryExecutor = queryExecutor,
-        bazelProcessRunner = processRunner,
-        output = output,
-    )
+    ): Int =
+        runStatus(
+            project = project,
+            topologyRequest =
+                TopologyRequest(buildSystem = BuildSystem.BAZEL, bazelTarget = bazelTarget),
+            bazelQueryExecutor = queryExecutor,
+            bazelProcessRunner = processRunner,
+            output = output,
+        )
 
     fun runStatus(
         project: Path,
@@ -82,19 +83,21 @@ class StatusCommand : CliktCommand(name = "status") {
 
         val manifest = ManifestIO.read(manifestPath)
         val request = resolveRequestForManifest(topologyRequest, manifest.scope, manifest.topology)
-        val topologyResult = TopologyResolver.resolve(
-            project = project,
-            request = request,
-            bazelQueryExecutor = bazelQueryExecutor,
-            bazelProcessRunner = bazelProcessRunner,
-        )
+        val topologyResult =
+            TopologyResolver.resolve(
+                project = project,
+                request = request,
+                bazelQueryExecutor = bazelQueryExecutor,
+                bazelProcessRunner = bazelProcessRunner,
+            )
         val currentHash = FileHashProducer.combinedSourcesHash(project, topologyResult.sourceFiles)
-        val criteria = ManifestFreshness.criteriaFrom(
-            commit = commit,
-            scope = manifest.scope,
-            sourcesContentHash = currentHash,
-            applications = manifest.applications,
-        )
+        val criteria =
+            ManifestFreshness.criteriaFrom(
+                commit = commit,
+                scope = manifest.scope,
+                sourcesContentHash = currentHash,
+                applications = manifest.applications,
+            )
         val fresh = ManifestFreshness.isFresh(manifest, criteria)
 
         output(
@@ -111,8 +114,8 @@ class StatusCommand : CliktCommand(name = "status") {
                     fresh = fresh,
                     currentSourcesContentHash = currentHash,
                     manifestSourcesContentHash = manifest.sourcesContentHash,
-                ),
-            ),
+                )
+            )
         )
         return CliExitCodes.SUCCESS
     }
@@ -132,10 +135,7 @@ class StatusCommand : CliktCommand(name = "status") {
                 includeDeps = cli.includeDeps,
             )
         } else {
-            cli.copy(
-                buildSystem = BuildSystem.BAZEL,
-                bazelTarget = manifestScope,
-            )
+            cli.copy(buildSystem = BuildSystem.BAZEL, bazelTarget = manifestScope)
         }
     }
 

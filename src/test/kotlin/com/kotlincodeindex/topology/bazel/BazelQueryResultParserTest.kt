@@ -7,9 +7,8 @@ import kotlin.test.assertEquals
 class BazelQueryResultParserTest {
     @Test
     fun `parses mock query output to kotlin source paths`() {
-        val lines = Path("src/test/resources/fixtures/bazel/mock-query-output.txt")
-            .toFile()
-            .readLines()
+        val lines =
+            Path("src/test/resources/fixtures/bazel/mock-query-output.txt").toFile().readLines()
         val paths = BazelQueryResultParser.parseKotlinSourcePaths(lines)
         assertEquals(
             listOf(

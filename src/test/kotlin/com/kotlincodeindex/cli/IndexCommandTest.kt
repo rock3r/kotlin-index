@@ -7,6 +7,7 @@ import com.kotlincodeindex.core.xodus.XodusCodeIndexStore
 import com.kotlincodeindex.topology.bazel.BazelProcessRunner
 import com.kotlincodeindex.topology.bazel.BazelQueryOutcome
 import com.kotlincodeindex.topology.bazel.MockBazelQueryExecutor
+import java.nio.file.Files
 import kotlin.io.path.Path
 import kotlin.io.path.createTempDirectory
 import kotlin.io.path.readText
@@ -14,44 +15,43 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import java.nio.file.Files
 
 class IndexCommandTest {
     private val tempDirs = mutableListOf<java.nio.file.Path>()
 
     @AfterTest
     fun tearDown() {
-        tempDirs.forEach { dir ->
-            dir.toFile().deleteRecursively()
-        }
+        tempDirs.forEach { dir -> dir.toFile().deleteRecursively() }
         tempDirs.clear()
     }
 
     @Test
     fun `index command builds store and manifest in temp workspace`() {
         val workspace = createGitWorkspace()
-        val mockOutput = Path("src/test/resources/fixtures/bazel/mock-query-output.txt")
-            .readText()
-            .lines()
+        val mockOutput =
+            Path("src/test/resources/fixtures/bazel/mock-query-output.txt").readText().lines()
 
         val stderr = StringBuilder()
-        val exitCode = IndexCommand().runIndexedBuild(
-            project = workspace,
-            bazelTarget = "//plugins/foo/ui:ui",
-            applications = emptyList(),
-            queryExecutor = MockBazelQueryExecutor(mockOutput),
-            progress = { stderr.appendLine(it) },
-        )
+        val exitCode =
+            IndexCommand()
+                .runIndexedBuild(
+                    project = workspace,
+                    bazelTarget = "//plugins/foo/ui:ui",
+                    applications = emptyList(),
+                    queryExecutor = MockBazelQueryExecutor(mockOutput),
+                    progress = { stderr.appendLine(it) },
+                )
 
         assertEquals(0, exitCode)
 
-        val commit = ProcessBuilder("git", "-C", workspace.toString(), "rev-parse", "HEAD")
-            .redirectErrorStream(true)
-            .start()
-            .inputStream
-            .bufferedReader()
-            .readText()
-            .trim()
+        val commit =
+            ProcessBuilder("git", "-C", workspace.toString(), "rev-parse", "HEAD")
+                .redirectErrorStream(true)
+                .start()
+                .inputStream
+                .bufferedReader()
+                .readText()
+                .trim()
 
         val resolver = IndexPathResolver(workspace)
         val manifest = ManifestIO.read(resolver.resolveManifest(commit))
@@ -67,9 +67,7 @@ class IndexCommandTest {
         try {
             val fileRecords = store.prefixScan("file:").toList()
             assertEquals(2, fileRecords.size)
-            fileRecords.forEach { (_, record) ->
-                assertTrue(record is FileHashRecord)
-            }
+            fileRecords.forEach { (_, record) -> assertTrue(record is FileHashRecord) }
         } finally {
             store.close()
         }
@@ -80,38 +78,40 @@ class IndexCommandTest {
     @Test
     fun `manifest includeDeps false when bazel query falls back to labels srcs`() {
         val workspace = createGitWorkspace()
-        val fallbackRunner = object : BazelProcessRunner {
-            override fun run(query: String, workspace: java.nio.file.Path): BazelQueryOutcome {
-                return when {
-                    query.contains("deps(") -> BazelQueryOutcome(1, listOf("ERROR: partial checkout"))
-                    query.contains("labels(srcs,") -> BazelQueryOutcome(
+        val fallbackRunner = BazelProcessRunner { query, _ ->
+            when {
+                query.contains("deps(") -> BazelQueryOutcome(1, listOf("ERROR: partial checkout"))
+                query.contains("labels(srcs,") ->
+                    BazelQueryOutcome(
                         0,
                         listOf(
                             "//plugins/foo/ui:src/main/kotlin/Panel.kt",
                             "//plugins/foo/ui:src/main/kotlin/Other.kt",
                         ),
                     )
-                    else -> error("unexpected query: $query")
-                }
+                else -> error("unexpected query: $query")
             }
         }
 
-        val exitCode = IndexCommand().runIndexedBuild(
-            project = workspace,
-            bazelTarget = "//plugins/foo/ui:ui",
-            applications = emptyList(),
-            queryExecutor = null,
-            processRunner = fallbackRunner,
-        )
+        val exitCode =
+            IndexCommand()
+                .runIndexedBuild(
+                    project = workspace,
+                    bazelTarget = "//plugins/foo/ui:ui",
+                    applications = emptyList(),
+                    queryExecutor = null,
+                    processRunner = fallbackRunner,
+                )
         assertEquals(0, exitCode)
 
-        val commit = ProcessBuilder("git", "-C", workspace.toString(), "rev-parse", "HEAD")
-            .redirectErrorStream(true)
-            .start()
-            .inputStream
-            .bufferedReader()
-            .readText()
-            .trim()
+        val commit =
+            ProcessBuilder("git", "-C", workspace.toString(), "rev-parse", "HEAD")
+                .redirectErrorStream(true)
+                .start()
+                .inputStream
+                .bufferedReader()
+                .readText()
+                .trim()
 
         val manifest = ManifestIO.read(IndexPathResolver(workspace).resolveManifest(commit))
         assertEquals("bazel-query", manifest.topology)
@@ -148,9 +148,10 @@ class IndexCommandTest {
     }
 
     private fun runGit(workspace: java.nio.file.Path, vararg args: String) {
-        val process = ProcessBuilder(*listOf("git", "-C", workspace.toString(), *args).toTypedArray())
-            .redirectErrorStream(true)
-            .start()
+        val process =
+            ProcessBuilder(*listOf("git", "-C", workspace.toString(), *args).toTypedArray())
+                .redirectErrorStream(true)
+                .start()
         val output = process.inputStream.bufferedReader().readText()
         check(process.waitFor() == 0) { "git ${args.joinToString(" ")} failed: $output" }
     }

@@ -1,16 +1,8 @@
 package com.kotlincodeindex.application.selectioncontext.model
 
-data class SelectionContainerInfo(
-    val file: String,
-    val line: Int,
-    val function: String,
-)
+data class SelectionContainerInfo(val file: String, val line: Int, val function: String)
 
-data class DisableSelectionInfo(
-    val file: String,
-    val line: Int,
-    val function: String,
-)
+data class DisableSelectionInfo(val file: String, val line: Int, val function: String)
 
 data class SelectionContext(
     val callee: String,

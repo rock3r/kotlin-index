@@ -1,6 +1,5 @@
 package com.kotlincodeindex.topology.gradle
 
-import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.exists
 import kotlin.io.path.isRegularFile
@@ -8,12 +7,13 @@ import kotlin.io.path.relativeTo
 import kotlin.io.path.walk
 
 object ModuleSourceRoots {
-    private val conventionalSourceDirs = listOf(
-        "src/main/kotlin",
-        "src/commonMain/kotlin",
-        "src/jvmMain/kotlin",
-        "src/androidMain/kotlin",
-    )
+    private val conventionalSourceDirs =
+        listOf(
+            "src/main/kotlin",
+            "src/commonMain/kotlin",
+            "src/jvmMain/kotlin",
+            "src/androidMain/kotlin",
+        )
 
     fun moduleDirectory(workspace: Path, modulePath: String): Path {
         val segments = modulePath.removePrefix(":").split(":").filter { it.isNotBlank() }
@@ -33,7 +33,8 @@ object ModuleSourceRoots {
             if (!root.exists()) {
                 emptyList()
             } else {
-                root.walk()
+                root
+                    .walk()
                     .filter { it.isRegularFile() && it.fileName.toString().endsWith(".kt") }
                     .map { it.relativeTo(workspace).toString().replace('\\', '/') }
                     .toList()

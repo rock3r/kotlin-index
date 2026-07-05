@@ -7,7 +7,6 @@ import org.jetbrains.kotlin.com.intellij.psi.PsiElement
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
 import org.jetbrains.kotlin.psi.KtFile
-import org.jetbrains.kotlin.psi.KtImportDirective
 import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtSimpleNameExpression
 
@@ -29,6 +28,12 @@ class SelectionWalker(
         var disableSelection: DisableSelectionInfo? = null
         var excluded = false
         var lambdaOrigin = false
+        val walkState =
+            AncestorWalkState(
+                excluded = excluded,
+                disableSelection = disableSelection,
+                lambdaOrigin = lambdaOrigin,
+            )
 
         var node = call.parent
         while (node != null && node != enclosingComposable) {
@@ -39,6 +44,7 @@ class SelectionWalker(
                     if (wrapper != null) {
                         containers += wrapper
                         lambdaOrigin = true
+                        walkState.lambdaOrigin = true
                     }
                 }
                 node = node.parent
@@ -47,41 +53,29 @@ class SelectionWalker(
                 if (callName == null) {
                     node = node.parent
                 } else {
-                    when {
-                        callName in dsAliases -> {
-                            if (containers.isEmpty() && disableSelection == null) {
-                                excluded = true
-                                disableSelection = DisableSelectionInfo(
-                                    file = relativeFile,
-                                    line = callExpr.getLineNumber(),
-                                    function = enclosingComposable.name ?: "<anonymous>",
-                                )
-                            }
-                        }
-                        callName in scAliases -> {
-                            containers += SelectionContainerInfo(
-                                file = relativeFile,
-                                line = callExpr.getLineNumber(),
-                                function = enclosingComposable.name ?: "<anonymous>",
-                            )
-                        }
-                        matchesKnownWrapper(callExpr, callName) -> {
-                            containers += SelectionContainerInfo(
-                                file = relativeFile,
-                                line = callExpr.getLineNumber(),
-                                function = enclosingComposable.name ?: "<anonymous>",
-                            )
-                        }
-                    }
+                    applyAncestorCallName(
+                        callName = callName,
+                        callExpr = callExpr,
+                        relativeFile = relativeFile,
+                        enclosingComposable = enclosingComposable,
+                        scAliases = scAliases,
+                        dsAliases = dsAliases,
+                        containers = containers,
+                        state = walkState,
+                    )
+                    excluded = walkState.excluded
+                    disableSelection = walkState.disableSelection
+                    lambdaOrigin = walkState.lambdaOrigin
                     node = node.parent
                 }
             }
         }
 
-        val confidence = when {
-            lambdaOrigin && containers.isNotEmpty() -> "caller-chain"
-            else -> "lexical"
-        }
+        val confidence =
+            when {
+                lambdaOrigin && containers.isNotEmpty() -> "caller-chain"
+                else -> "lexical"
+            }
 
         return SelectionContext(
             callee = callee ?: "<unknown>",
@@ -93,6 +87,51 @@ class SelectionWalker(
             confidence = confidence,
         )
     }
+
+    private data class AncestorWalkState(
+        var excluded: Boolean,
+        var disableSelection: DisableSelectionInfo?,
+        var lambdaOrigin: Boolean,
+    )
+
+    private fun applyAncestorCallName(
+        callName: String,
+        callExpr: KtCallExpression,
+        relativeFile: String,
+        enclosingComposable: KtNamedFunction,
+        scAliases: Set<String>,
+        dsAliases: Set<String>,
+        containers: MutableList<SelectionContainerInfo>,
+        state: AncestorWalkState,
+    ) {
+        when {
+            callName in dsAliases -> {
+                if (containers.isEmpty() && state.disableSelection == null) {
+                    state.excluded = true
+                    state.disableSelection =
+                        DisableSelectionInfo(
+                            file = relativeFile,
+                            line = callExpr.getLineNumber(),
+                            function = enclosingComposable.name ?: "<anonymous>",
+                        )
+                }
+            }
+            callName in scAliases || matchesKnownWrapper(callExpr, callName) -> {
+                containers += selectionContainerInfo(relativeFile, callExpr, enclosingComposable)
+            }
+        }
+    }
+
+    private fun selectionContainerInfo(
+        relativeFile: String,
+        callExpr: KtCallExpression,
+        enclosingComposable: KtNamedFunction,
+    ): SelectionContainerInfo =
+        SelectionContainerInfo(
+            file = relativeFile,
+            line = callExpr.getLineNumber(),
+            function = enclosingComposable.name ?: "<anonymous>",
+        )
 
     private fun matchesKnownWrapper(call: KtCallExpression, callName: String): Boolean {
         val rule = knownWrapperRules.firstOrNull { it.callee == callName } ?: return false
@@ -120,18 +159,24 @@ class SelectionWalker(
     }
 
     fun findCallAtLine(file: KtFile, relativeFile: String, line: Int): SelectionContext {
-        val calls = file.collectDescendantsOfType<KtCallExpression>()
-            .filter { it.getLineNumber() == line }
-        val target = calls.firstOrNull { call ->
-            val name = extractCalleeName(call)
-            name != null && name !in selectionContainerNames && name !in disableSelectionNames &&
-                !isSelectionContainerAlias(file, name) && !isDisableSelectionAlias(file, name)
-        } ?: calls.firstOrNull()
-            ?: error("No call expression at line $line in $relativeFile")
+        val calls =
+            file.collectDescendantsOfType<KtCallExpression>().filter { it.getLineNumber() == line }
+        val target =
+            calls.firstOrNull { call ->
+                val name = extractCalleeName(call)
+                name != null &&
+                    name !in selectionContainerNames &&
+                    name !in disableSelectionNames &&
+                    !isSelectionContainerAlias(file, name) &&
+                    !isDisableSelectionAlias(file, name)
+            } ?: calls.firstOrNull() ?: error("No call expression at line $line in $relativeFile")
         return analyzeCallSite(target, relativeFile)
     }
 
-    private fun findEnclosingComposable(call: KtCallExpression, relativeFile: String): KtNamedFunction {
+    private fun findEnclosingComposable(
+        call: KtCallExpression,
+        relativeFile: String,
+    ): KtNamedFunction {
         var current: PsiElement? = call.parent
         while (current != null) {
             if (current is KtNamedFunction && hasComposableAnnotation(current)) {
@@ -155,14 +200,10 @@ class SelectionWalker(
 
     private fun resolveAliases(file: KtFile, canonicalNames: Set<String>): Set<String> {
         val names = canonicalNames.toMutableSet()
-        for (import in file.importDirectives) {
-            val importedName = import.importedFqName?.shortName()?.asString() ?: continue
-            if (importedName !in canonicalNames) {
-                continue
-            }
-            val alias = import.aliasName
-            if (alias != null) {
-                names += alias
+        file.importDirectives.forEach { import ->
+            val importedName = import.importedFqName?.shortName()?.asString() ?: return@forEach
+            if (importedName in canonicalNames) {
+                import.aliasName?.let { names += it }
             }
         }
         return names
@@ -180,8 +221,8 @@ class SelectionWalker(
     }
 
     private fun KtCallExpression.getLineNumber(): Int {
-        val doc = containingFile.viewProvider.document
-            ?: error("No document for ${containingFile.name}")
+        val doc =
+            containingFile.viewProvider.document ?: error("No document for ${containingFile.name}")
         return doc.getLineNumber(textRange.startOffset) + 1
     }
 
@@ -192,15 +233,18 @@ class SelectionWalker(
     }
 }
 
-private inline fun <reified T> org.jetbrains.kotlin.psi.KtElement.collectDescendantsOfType(): List<T> {
+private inline fun <reified T> org.jetbrains.kotlin.psi.KtElement.collectDescendantsOfType():
+    List<T> {
     val results = mutableListOf<T>()
-    accept(object : org.jetbrains.kotlin.com.intellij.psi.PsiElementVisitor() {
-        override fun visitElement(element: org.jetbrains.kotlin.com.intellij.psi.PsiElement) {
-            if (element is T) {
-                results += element
+    accept(
+        object : org.jetbrains.kotlin.com.intellij.psi.PsiElementVisitor() {
+            override fun visitElement(element: org.jetbrains.kotlin.com.intellij.psi.PsiElement) {
+                if (element is T) {
+                    results += element
+                }
+                element.acceptChildren(this)
             }
-            element.acceptChildren(this)
         }
-    })
+    )
     return results
 }

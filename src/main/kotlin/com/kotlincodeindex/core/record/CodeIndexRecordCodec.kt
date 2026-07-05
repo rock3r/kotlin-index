@@ -22,7 +22,8 @@ object CodeIndexRecordCodec {
         ignoreUnknownKeys = true
     }
 
-    fun encode(record: CodeIndexRecord): ByteArray = json.encodeToString(CodeIndexRecord.serializer(), record).toByteArray()
+    fun encode(record: CodeIndexRecord): ByteArray =
+        json.encodeToString(CodeIndexRecord.serializer(), record).toByteArray()
 
     fun decode(bytes: ByteArray): CodeIndexRecord =
         json.decodeFromString(CodeIndexRecord.serializer(), bytes.decodeToString())

@@ -2,7 +2,6 @@ package com.kotlincodeindex.application.selectioncontext
 
 import com.kotlincodeindex.core.key.CodeIndexKey
 import com.kotlincodeindex.core.record.ComposeSelectionSiteRecord
-import com.kotlincodeindex.core.record.DisableSelectionRef
 import com.kotlincodeindex.core.record.SelectionContainerRef
 import com.kotlincodeindex.core.xodus.XodusCodeIndexStore
 import com.kotlincodeindex.producer.IndexBuildContext
@@ -61,11 +60,12 @@ class SelectionContextQueryTest {
 
     @Test
     fun `jsonl output has required fields`() {
-        queryService = SelectionContextQueryService(
-            store = store,
-            scopeTarget = "//plugins/foo/ui:ui",
-            scopeTopology = "bazel-query",
-        )
+        queryService =
+            SelectionContextQueryService(
+                store = store,
+                scopeTarget = "//plugins/foo/ui:ui",
+                scopeTopology = "bazel-query",
+            )
         val rows = queryService.queryPreset("all-call-sites")
         val jsonl = SelectionContextJsonlFormatter.formatLines(rows)
         assertEquals(5, jsonl.size)
@@ -112,9 +112,7 @@ class SelectionContextQueryTest {
                 inSelectionContainer = true,
                 selectionContainerCount = 1,
                 excludedByDisableSelection = false,
-                selectionContainers = listOf(
-                    SelectionContainerRef("extra.kt", 5, "Panel"),
-                ),
+                selectionContainers = listOf(SelectionContainerRef("extra.kt", 5, "Panel")),
             ),
         )
 
@@ -124,24 +122,33 @@ class SelectionContextQueryTest {
     }
 
     private fun indexFixtures() {
-        val files = listOf(
-            "nested-sc.kt",
-            "disable-selection.kt",
-            "no-sc.kt",
-            "local-helper.kt",
-            "import-alias.kt",
-        ).associateWith { name ->
-            checkNotNull(javaClass.classLoader.getResourceAsStream("fixtures/selection-context/$name")) {
-                "Missing fixture: $name"
-            }.bufferedReader().readText()
-        }
-        SelectionContextProducer().produce(
-            IndexBuildContext(
-                store = store,
-                commitHash = "test-commit",
-                sourceFiles = files.keys.toList(),
-                sourceContentOverrides = files,
-            ),
-        )
+        val files =
+            listOf(
+                    "nested-sc.kt",
+                    "disable-selection.kt",
+                    "no-sc.kt",
+                    "local-helper.kt",
+                    "import-alias.kt",
+                )
+                .associateWith { name ->
+                    checkNotNull(
+                            javaClass.classLoader.getResourceAsStream(
+                                "fixtures/selection-context/$name"
+                            )
+                        ) {
+                            "Missing fixture: $name"
+                        }
+                        .bufferedReader()
+                        .readText()
+                }
+        SelectionContextProducer()
+            .produce(
+                IndexBuildContext(
+                    store = store,
+                    commitHash = "test-commit",
+                    sourceFiles = files.keys.toList(),
+                    sourceContentOverrides = files,
+                )
+            )
     }
 }

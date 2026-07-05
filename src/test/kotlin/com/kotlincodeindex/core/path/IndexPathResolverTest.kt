@@ -1,8 +1,8 @@
 package com.kotlincodeindex.core.path
 
+import kotlin.io.path.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.io.path.Path
 
 class IndexPathResolverTest {
     @Test

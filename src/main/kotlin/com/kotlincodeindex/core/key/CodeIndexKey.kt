@@ -1,7 +1,8 @@
 package com.kotlincodeindex.core.key
 
 /**
- * Typed index key. All persisted keys must be built through these factories — no ad hoc concatenation.
+ * Typed index key. All persisted keys must be built through these factories — no ad hoc
+ * concatenation.
  */
 @JvmInline
 value class CodeIndexKey(val value: String) {

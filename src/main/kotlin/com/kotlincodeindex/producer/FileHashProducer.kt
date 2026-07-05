@@ -5,6 +5,7 @@ import com.kotlincodeindex.core.record.FileHashRecord
 import com.kotlincodeindex.core.store.CodeIndexStore
 import java.nio.file.Path
 import java.security.MessageDigest
+import java.util.Locale
 import kotlin.io.path.readText
 
 class FileHashProducer : IndexProducer {
@@ -28,7 +29,7 @@ class FileHashProducer : IndexProducer {
     companion object {
         fun contentHash(content: String): String {
             val digest = MessageDigest.getInstance("SHA-256").digest(content.toByteArray())
-            return "sha256:" + digest.joinToString("") { "%02x".format(it) }
+            return "sha256:" + digest.joinToString("") { "%02x".format(Locale.ROOT, it) }
         }
 
         fun combinedSourcesHash(context: IndexBuildContext, sourceFiles: List<String>): String =
@@ -43,11 +44,12 @@ class FileHashProducer : IndexProducer {
             sourceFiles: List<String>,
             sourceContentOverrides: Map<String, String> = emptyMap(),
         ): String {
-            val combined = sourceFiles.sorted().joinToString("\n") { path ->
-                val content = sourceContentOverrides[path]
-                    ?: workspaceRoot.resolve(path).readText()
-                "$path:${contentHash(content)}"
-            }
+            val combined =
+                sourceFiles.sorted().joinToString("\n") { path ->
+                    val content =
+                        sourceContentOverrides[path] ?: workspaceRoot.resolve(path).readText()
+                    "$path:${contentHash(content)}"
+                }
             return contentHash(combined)
         }
     }

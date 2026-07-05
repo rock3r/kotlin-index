@@ -14,9 +14,10 @@ class BuildFileGlobTest {
 
         assertEquals(
             listOf(
-                "plugins/bar/glob/src/main/kotlin/Foo.kt",
-                "plugins/bar/glob/src/main/kotlin/Bar.kt",
-            ).sorted(),
+                    "plugins/bar/glob/src/main/kotlin/Foo.kt",
+                    "plugins/bar/glob/src/main/kotlin/Bar.kt",
+                )
+                .sorted(),
             result.paths.sorted(),
         )
         assertTrue(result.warnings.isEmpty())

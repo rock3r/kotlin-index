@@ -17,14 +17,16 @@ enum class BuildSystem {
 
 object BuildSystemDetector {
     fun detect(projectRoot: Path): BuildSystem? {
-        val hasBazel = projectRoot.resolve("MODULE.bazel").toFile().exists() ||
-            projectRoot.resolve("WORKSPACE").toFile().exists() ||
-            projectRoot.resolve("WORKSPACE.bazel").toFile().exists()
+        val hasBazel =
+            projectRoot.resolve("MODULE.bazel").toFile().exists() ||
+                projectRoot.resolve("WORKSPACE").toFile().exists() ||
+                projectRoot.resolve("WORKSPACE.bazel").toFile().exists()
         if (hasBazel) {
             return BuildSystem.BAZEL
         }
-        val hasGradle = projectRoot.resolve("settings.gradle.kts").toFile().exists() ||
-            projectRoot.resolve("settings.gradle").toFile().exists()
+        val hasGradle =
+            projectRoot.resolve("settings.gradle.kts").toFile().exists() ||
+                projectRoot.resolve("settings.gradle").toFile().exists()
         if (hasGradle) {
             return BuildSystem.GRADLE
         }

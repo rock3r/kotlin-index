@@ -4,10 +4,7 @@ import java.nio.file.Path
 import kotlin.io.path.exists
 import kotlin.io.path.readText
 
-class GradleModuleGraph(
-    private val workspace: Path,
-    private val includedModules: List<String>,
-) {
+class GradleModuleGraph(private val workspace: Path, private val includedModules: List<String>) {
     private val dependencyMap: Map<String, List<String>> by lazy { buildDependencyMap() }
 
     fun closure(rootModule: String, includeDeps: Boolean): List<String> {
@@ -35,10 +32,15 @@ class GradleModuleGraph(
         val map = mutableMapOf<String, List<String>>()
         for (module in includedModules) {
             val moduleDir = ModuleSourceRoots.moduleDirectory(workspace, module)
-            val buildFile = listOf("build.gradle.kts", "build.gradle")
-                .map { moduleDir.resolve(it) }
-                .firstOrNull { it.exists() }
-            val deps = buildFile?.readText()?.let { BuildGradleParser.parseProjectDependencies(it) }.orEmpty()
+            val buildFile =
+                listOf("build.gradle.kts", "build.gradle")
+                    .map { moduleDir.resolve(it) }
+                    .firstOrNull { it.exists() }
+            val deps =
+                buildFile
+                    ?.readText()
+                    ?.let { BuildGradleParser.parseProjectDependencies(it) }
+                    .orEmpty()
             map[module] = deps
         }
         return map

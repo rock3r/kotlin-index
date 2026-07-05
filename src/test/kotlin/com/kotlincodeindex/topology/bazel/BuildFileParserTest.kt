@@ -14,9 +14,10 @@ class BuildFileParserTest {
         val result = BuildFileParser.parseKotlinSources(buildFile, workspace)
         assertEquals(
             listOf(
-                "plugins/foo/ui/src/main/kotlin/Panel.kt",
-                "plugins/foo/ui/src/main/kotlin/Other.kt",
-            ).sorted(),
+                    "plugins/foo/ui/src/main/kotlin/Panel.kt",
+                    "plugins/foo/ui/src/main/kotlin/Other.kt",
+                )
+                .sorted(),
             result.paths.sorted(),
         )
     }
@@ -45,24 +46,32 @@ class BuildFileParserTest {
             parentFile.mkdirs()
             writeText("class Sub")
         }
-        packageDir.resolve("sub/BUILD.bazel").toFile().writeText(
-            """
-            kt_jvm_library(
-                name = "sub",
-                srcs = ["Main.kt"],
+        packageDir
+            .resolve("sub/BUILD.bazel")
+            .toFile()
+            .writeText(
+                """
+                kt_jvm_library(
+                    name = "sub",
+                    srcs = ["Main.kt"],
+                )
+                """
+                    .trimIndent()
             )
-            """.trimIndent(),
-        )
-        packageDir.resolve("BUILD.bazel").writeText(
-            """
-            kt_jvm_library(
-                name = "lib",
-                srcs = glob(["**/*.kt"]),
+        packageDir
+            .resolve("BUILD.bazel")
+            .writeText(
+                """
+                kt_jvm_library(
+                    name = "lib",
+                    srcs = glob(["**/*.kt"]),
+                )
+                """
+                    .trimIndent()
             )
-            """.trimIndent(),
-        )
 
-        val result = BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
+        val result =
+            BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
         assertEquals(listOf("pkg/keep/Main.kt"), result.paths)
     }
 
@@ -72,18 +81,22 @@ class BuildFileParserTest {
         val packageDir = workspace.resolve("pkg")
         packageDir.toFile().mkdirs()
         packageDir.resolve("Main.kt").toFile().writeText("class Main")
-        packageDir.resolve("BUILD.bazel").writeText(
-            """
-            kt_jvm_library(
-                name = "lib",
-                srcs = glob(
-                    include = ["**/*.kt"],
-                ),
+        packageDir
+            .resolve("BUILD.bazel")
+            .writeText(
+                """
+                kt_jvm_library(
+                    name = "lib",
+                    srcs = glob(
+                        include = ["**/*.kt"],
+                    ),
+                )
+                """
+                    .trimIndent()
             )
-            """.trimIndent(),
-        )
 
-        val result = BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
+        val result =
+            BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
         assertEquals(listOf("pkg/Main.kt"), result.paths)
     }
 
@@ -94,20 +107,21 @@ class BuildFileParserTest {
         packageDir.toFile().mkdirs()
         packageDir.resolve("foo#bar.kt").toFile().writeText("class FooBar")
         packageDir.resolve("Other.kt").toFile().writeText("class Other")
-        packageDir.resolve("BUILD.bazel").writeText(
-            """
-            kt_jvm_library(
-                name = "lib",
-                srcs = ["foo#bar.kt", "Other.kt"],
+        packageDir
+            .resolve("BUILD.bazel")
+            .writeText(
+                """
+                kt_jvm_library(
+                    name = "lib",
+                    srcs = ["foo#bar.kt", "Other.kt"],
+                )
+                """
+                    .trimIndent()
             )
-            """.trimIndent(),
-        )
 
-        val result = BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
-        assertEquals(
-            listOf("pkg/Other.kt", "pkg/foo#bar.kt").sorted(),
-            result.paths.sorted(),
-        )
+        val result =
+            BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
+        assertEquals(listOf("pkg/Other.kt", "pkg/foo#bar.kt").sorted(), result.paths.sorted())
     }
 
     @Test
@@ -117,20 +131,21 @@ class BuildFileParserTest {
         packageDir.toFile().mkdirs()
         packageDir.resolve("foo#bar.kt").toFile().writeText("class FooBar")
         packageDir.resolve("Other.kt").toFile().writeText("class Other")
-        packageDir.resolve("BUILD.bazel").writeText(
-            """
-            kt_jvm_library(
-                name = "lib",
-                srcs = ['foo#bar.kt', 'Other.kt'],
+        packageDir
+            .resolve("BUILD.bazel")
+            .writeText(
+                """
+                kt_jvm_library(
+                    name = "lib",
+                    srcs = ['foo#bar.kt', 'Other.kt'],
+                )
+                """
+                    .trimIndent()
             )
-            """.trimIndent(),
-        )
 
-        val result = BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
-        assertEquals(
-            listOf("pkg/Other.kt", "pkg/foo#bar.kt").sorted(),
-            result.paths.sorted(),
-        )
+        val result =
+            BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
+        assertEquals(listOf("pkg/Other.kt", "pkg/foo#bar.kt").sorted(), result.paths.sorted())
     }
 
     @Test
@@ -139,16 +154,20 @@ class BuildFileParserTest {
         val packageDir = workspace.resolve("pkg")
         packageDir.toFile().mkdirs()
         packageDir.resolve("foo#bar.kt").toFile().writeText("class FooBar")
-        packageDir.resolve("BUILD.bazel").writeText(
-            """
-            kt_jvm_library(
-                name = "lib",
-                srcs = glob(['foo#bar.kt']),
+        packageDir
+            .resolve("BUILD.bazel")
+            .writeText(
+                """
+                kt_jvm_library(
+                    name = "lib",
+                    srcs = glob(['foo#bar.kt']),
+                )
+                """
+                    .trimIndent()
             )
-            """.trimIndent(),
-        )
 
-        val result = BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
+        val result =
+            BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
         assertEquals(listOf("pkg/foo#bar.kt"), result.paths)
     }
 
@@ -159,19 +178,23 @@ class BuildFileParserTest {
         packageDir.toFile().mkdirs()
         packageDir.resolve("Active.kt").toFile().writeText("class Active")
         packageDir.resolve("Legacy.kt").toFile().writeText("class Legacy")
-        packageDir.resolve("BUILD.bazel").writeText(
-            """
-            kt_jvm_library(
-                name = "lib",
-                srcs = [
-                    "Active.kt",
-                    # "Legacy.kt",
-                ],
+        packageDir
+            .resolve("BUILD.bazel")
+            .writeText(
+                """
+                kt_jvm_library(
+                    name = "lib",
+                    srcs = [
+                        "Active.kt",
+                        # "Legacy.kt",
+                    ],
+                )
+                """
+                    .trimIndent()
             )
-            """.trimIndent(),
-        )
 
-        val result = BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
+        val result =
+            BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
         assertEquals(listOf("pkg/Active.kt"), result.paths)
     }
 
@@ -188,17 +211,21 @@ class BuildFileParserTest {
             parentFile.mkdirs()
             writeText("class Extra")
         }
-        packageDir.resolve("BUILD.bazel").writeText(
-            """
-            kt_jvm_library(
-                name = "lib",
-                srcs = ["src/main/kotlin/Main.kt"],
-                data = glob(["resources/**/*.kt"]),
+        packageDir
+            .resolve("BUILD.bazel")
+            .writeText(
+                """
+                kt_jvm_library(
+                    name = "lib",
+                    srcs = ["src/main/kotlin/Main.kt"],
+                    data = glob(["resources/**/*.kt"]),
+                )
+                """
+                    .trimIndent()
             )
-            """.trimIndent(),
-        )
 
-        val result = BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
+        val result =
+            BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
         assertEquals(listOf("pkg/src/main/kotlin/Main.kt"), result.paths)
     }
 
@@ -212,19 +239,23 @@ class BuildFileParserTest {
             writeText("class Main")
         }
         packageDir.resolve("src/main/kotlin/MainTest.kt").toFile().writeText("class MainTest")
-        packageDir.resolve("BUILD.bazel").writeText(
-            """
-            kt_jvm_library(
-                name = "lib",
-                srcs = glob(
-                    ["**/*.kt"],
-                    exclude = glob(["**/*Test.kt"]),
-                ),
+        packageDir
+            .resolve("BUILD.bazel")
+            .writeText(
+                """
+                kt_jvm_library(
+                    name = "lib",
+                    srcs = glob(
+                        ["**/*.kt"],
+                        exclude = glob(["**/*Test.kt"]),
+                    ),
+                )
+                """
+                    .trimIndent()
             )
-            """.trimIndent(),
-        )
 
-        val result = BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
+        val result =
+            BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
         assertEquals(listOf("pkg/src/main/kotlin/Main.kt"), result.paths)
     }
 
@@ -235,17 +266,21 @@ class BuildFileParserTest {
         packageDir.toFile().mkdirs()
         packageDir.resolve("Active.kt").toFile().writeText("class Active")
         packageDir.resolve("Legacy.kt").toFile().writeText("class Legacy")
-        packageDir.resolve("BUILD.bazel").writeText(
-            """
-            kt_jvm_library(
-                name = "lib",
-                srcs = ["Active.kt"],
-                # srcs = glob(["legacy/**/*.kt"]),
+        packageDir
+            .resolve("BUILD.bazel")
+            .writeText(
+                """
+                kt_jvm_library(
+                    name = "lib",
+                    srcs = ["Active.kt"],
+                    # srcs = glob(["legacy/**/*.kt"]),
+                )
+                """
+                    .trimIndent()
             )
-            """.trimIndent(),
-        )
 
-        val result = BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
+        val result =
+            BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
         assertEquals(listOf("pkg/Active.kt"), result.paths)
     }
 
@@ -256,19 +291,23 @@ class BuildFileParserTest {
         packageDir.toFile().mkdirs()
         packageDir.resolve("Main.kt").toFile().writeText("class Main")
         packageDir.resolve("MainTest.kt").toFile().writeText("class MainTest")
-        packageDir.resolve("BUILD.bazel").writeText(
-            """
-            kt_jvm_library(
-                name = "lib",
-                srcs = glob(
-                    ["**/*.kt"],
-                    exclude = glob(include = ["**/*Test.kt"]),
-                ),
+        packageDir
+            .resolve("BUILD.bazel")
+            .writeText(
+                """
+                kt_jvm_library(
+                    name = "lib",
+                    srcs = glob(
+                        ["**/*.kt"],
+                        exclude = glob(include = ["**/*Test.kt"]),
+                    ),
+                )
+                """
+                    .trimIndent()
             )
-            """.trimIndent(),
-        )
 
-        val result = BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
+        val result =
+            BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
         assertEquals(listOf("pkg/Main.kt"), result.paths)
     }
 
@@ -279,19 +318,23 @@ class BuildFileParserTest {
         packageDir.toFile().mkdirs()
         packageDir.resolve("Active.kt").toFile().writeText("class Active")
         packageDir.resolve("Legacy.kt").toFile().writeText("class Legacy")
-        packageDir.resolve("BUILD.bazel").writeText(
-            """
-            kt_jvm_library(
-                name = "lib",
-                srcs = glob(
-                    # include = ["**/*.kt"],
-                    ["Active.kt"],
-                ),
+        packageDir
+            .resolve("BUILD.bazel")
+            .writeText(
+                """
+                kt_jvm_library(
+                    name = "lib",
+                    srcs = glob(
+                        # include = ["**/*.kt"],
+                        ["Active.kt"],
+                    ),
+                )
+                """
+                    .trimIndent()
             )
-            """.trimIndent(),
-        )
 
-        val result = BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
+        val result =
+            BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
         assertEquals(listOf("pkg/Active.kt"), result.paths)
     }
 
@@ -301,16 +344,20 @@ class BuildFileParserTest {
         val packageDir = workspace.resolve("pkg")
         packageDir.toFile().mkdirs()
         packageDir.resolve("Main.kt").toFile().writeText("class Main")
-        packageDir.resolve("BUILD.bazel").writeText(
-            """
-            kt_jvm_library(
-                name = "lib",
-                srcs = glob(['**/*.kt']),
+        packageDir
+            .resolve("BUILD.bazel")
+            .writeText(
+                """
+                kt_jvm_library(
+                    name = "lib",
+                    srcs = glob(['**/*.kt']),
+                )
+                """
+                    .trimIndent()
             )
-            """.trimIndent(),
-        )
 
-        val result = BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
+        val result =
+            BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
         assertEquals(listOf("pkg/Main.kt"), result.paths)
     }
 
@@ -324,16 +371,20 @@ class BuildFileParserTest {
             parentFile.mkdirs()
             writeText("class Extra")
         }
-        packageDir.resolve("BUILD.bazel").writeText(
-            """
-            kt_jvm_library(
-                name = "lib",
-                srcs = ["Main.kt"] + glob(["src/**/*.kt"]),
+        packageDir
+            .resolve("BUILD.bazel")
+            .writeText(
+                """
+                kt_jvm_library(
+                    name = "lib",
+                    srcs = ["Main.kt"] + glob(["src/**/*.kt"]),
+                )
+                """
+                    .trimIndent()
             )
-            """.trimIndent(),
-        )
 
-        val result = BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
+        val result =
+            BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
         assertEquals(listOf("pkg/Main.kt", "pkg/src/Extra.kt").sorted(), result.paths.sorted())
     }
 
@@ -347,17 +398,21 @@ class BuildFileParserTest {
             parentFile.mkdirs()
             writeText("class Extra")
         }
-        packageDir.resolve("BUILD.bazel").writeText(
-            """
-            kt_jvm_library(
-                name = "lib",
-                srcs = ["Main.kt"]
-                    + glob(["src/**/*.kt"]),
+        packageDir
+            .resolve("BUILD.bazel")
+            .writeText(
+                """
+                kt_jvm_library(
+                    name = "lib",
+                    srcs = ["Main.kt"]
+                        + glob(["src/**/*.kt"]),
+                )
+                """
+                    .trimIndent()
             )
-            """.trimIndent(),
-        )
 
-        val result = BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
+        val result =
+            BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
         assertEquals(listOf("pkg/Main.kt", "pkg/src/Extra.kt").sorted(), result.paths.sorted())
     }
 
@@ -371,17 +426,21 @@ class BuildFileParserTest {
             parentFile.mkdirs()
             writeText("class Extra")
         }
-        packageDir.resolve("BUILD.bazel").writeText(
-            """
-            kt_jvm_library(
-                name = "lib",
-                srcs = ["Main.kt"],
-                data = ["README"] + glob(["resources/**/*.kt"]),
+        packageDir
+            .resolve("BUILD.bazel")
+            .writeText(
+                """
+                kt_jvm_library(
+                    name = "lib",
+                    srcs = ["Main.kt"],
+                    data = ["README"] + glob(["resources/**/*.kt"]),
+                )
+                """
+                    .trimIndent()
             )
-            """.trimIndent(),
-        )
 
-        val result = BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
+        val result =
+            BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
         assertEquals(listOf("pkg/Main.kt"), result.paths)
     }
 
@@ -392,19 +451,23 @@ class BuildFileParserTest {
         packageDir.toFile().mkdirs()
         packageDir.resolve("Main.kt").toFile().writeText("class Main")
         packageDir.resolve("MainTest.kt").toFile().writeText("class MainTest")
-        packageDir.resolve("BUILD.bazel").writeText(
-            """
-            kt_jvm_library(
-                name = "lib",
-                srcs = glob(
-                    exclude = ["**/*Test.kt"],
-                    include = ["**/*.kt"],
-                ),
+        packageDir
+            .resolve("BUILD.bazel")
+            .writeText(
+                """
+                kt_jvm_library(
+                    name = "lib",
+                    srcs = glob(
+                        exclude = ["**/*Test.kt"],
+                        include = ["**/*.kt"],
+                    ),
+                )
+                """
+                    .trimIndent()
             )
-            """.trimIndent(),
-        )
 
-        val result = BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
+        val result =
+            BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
         assertEquals(listOf("pkg/Main.kt"), result.paths)
     }
 
@@ -415,20 +478,24 @@ class BuildFileParserTest {
         packageDir.toFile().mkdirs()
         packageDir.resolve("Main.kt").toFile().writeText("class Main")
         packageDir.resolve("Other.kt").toFile().writeText("class Other")
-        packageDir.resolve("BUILD.bazel").writeText(
-            """
-            kt_jvm_library(
-                name = "lib",
-                srcs = [
-                    "Main.kt",
-                    # glob(["Legacy.kt"]),
-                    "Other.kt",
-                ],
+        packageDir
+            .resolve("BUILD.bazel")
+            .writeText(
+                """
+                kt_jvm_library(
+                    name = "lib",
+                    srcs = [
+                        "Main.kt",
+                        # glob(["Legacy.kt"]),
+                        "Other.kt",
+                    ],
+                )
+                """
+                    .trimIndent()
             )
-            """.trimIndent(),
-        )
 
-        val result = BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
+        val result =
+            BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
         assertEquals(listOf("pkg/Main.kt", "pkg/Other.kt").sorted(), result.paths.sorted())
     }
 }
