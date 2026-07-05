@@ -1,0 +1,10 @@
+load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
+
+kt_jvm_library(
+    name = "ui",
+    srcs = [
+        "src/main/kotlin/Panel.kt",
+        "src/main/kotlin/Other.kt",
+    ],
+    visibility = ["//visibility:public"],
+)

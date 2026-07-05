@@ -1,0 +1,7 @@
+directories:
+  .
+  plugins/foo
+
+targets:
+  //plugins/foo/ui:ui
+  //plugins/foo/ui:ui-test

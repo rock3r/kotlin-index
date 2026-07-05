@@ -1,0 +1,83 @@
+# Index storage
+
+Persistent on-disk layout for **kotlin-code-index**.
+
+## Why `.kotlin-index/` (not `.agent/` or `.agents/`)
+
+| Path | Purpose |
+|------|---------|
+| **`.kotlin-index/`** | This tool's index store in a workspace being indexed |
+| **`.agents/`** | Agent skills in the **tool repo** (unrelated) |
+
+Upstream in-app code-index (#814) uses `.agent/` — we deliberately use a **distinct directory** to avoid confusion. Key schema and record shapes stay compatible; only the root folder name differs. Optional future: `--store-dir` override or import from `.agent/` if both exist.
+
+## Workspace layout
+
+```
+<project-root>/
+  .kotlin-index/
+    index/
+      <git-commit-hash>/
+        base.xodus/       # immutable after seal
+        manifest.json     # scope, hashes, indexer version
+    sessions/
+      <session-id>/
+        delta.xodus/      # optional overlay (future)
+```
+
+**Gitignore:** add `.kotlin-index/` to audited monorepos (CLI prints a hint on first `index`).
+
+## Manifest
+
+See [kotlin-code-index-core.md](../.plans/kotlin-code-index-core.md). Skip rebuild when commit, scope, sources hash, and indexer version match.
+
+## Key namespaces
+
+| Prefix | Owner | Purpose |
+|--------|-------|---------|
+| `sym:` | Core (future) | Symbol definitions |
+| `ref:` | Core (future) | References |
+| `file:` | Core | Path + content hash |
+| `compose:` | selection-context | Selection site facts |
+| `meta:` | Core | Indexer metadata |
+
+All keys via `CodeIndexKey` — no ad hoc concatenation.
+
+## Xodus
+
+Embedded store (v2.0.1 via `xodus-environment`); `prefixScan` for preset queries. Dependency in Core C0:
+
+```kotlin
+// gradle/libs.versions.toml
+xodus = "2.0.1"
+// build.gradle.kts
+implementation(libs.xodus.environment)
+```
+
+## Default path constant
+
+```kotlin
+object IndexPaths {
+    const val STORE_DIR_NAME = ".kotlin-index"
+}
+```
+
+## Query path
+
+1. Resolve manifest for commit + scope
+2. Open `base.xodus` read-only
+3. Application scans keys
+
+## Invalidation
+
+| Event | Action |
+|-------|--------|
+| New `git commit` | new `index/<hash>/` |
+| File edit | re-run producers for changed files |
+| Scope change | rebuild with new manifest |
+| Indexer version bump | rebuild |
+
+## Deprecated paths
+
+- `.compose-selection-index/` — early sketch, do not use
+- `.agent/` — upstream #814 name only; not used by this CLI unless `--store-dir .agent` added later
