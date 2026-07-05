@@ -11,7 +11,7 @@ Bazel-first (Gradle secondary), ships as a fat JAR with no target-repo build cou
 **selection-context** is the first application plugin: precomputed SelectionContainer /
 DisableSelection facts at composable call sites for Compose/Jewel UI audits.
 
-Licensed under the [Universal Ethical License (UEL) v1.0](https://uelicense.eu/) — see
+Licensed under the [Unenshittifiable License (UEL) v1.0](https://uelicense.eu/) — see
 [LICENSE](LICENSE).
 
 ## Quick start
