@@ -240,6 +240,42 @@ class JavaSourceProducerTest {
         }
     }
 
+    @Test
+    fun `anonymous Java members use an anonymous owner`() {
+        val source =
+            """
+            package sample;
+            class Outer {
+                void call() {
+                    Runnable task = new Runnable() {
+                        public void run() {}
+                    };
+                }
+            }
+            """
+                .trimIndent()
+
+        withStore { store ->
+            val producer = assertNotNull(ProducerRegistry.get("java-source"))
+            producer.produce(
+                IndexBuildContext.forInlineSources(
+                    store = store,
+                    commitHash = "abc",
+                    sourceFiles = mapOf("Outer.java" to source),
+                )
+            )
+
+            val symbols =
+                store.prefixScan("sym:").map { it.second }.filterIsInstance<SymbolRecord>().toList()
+            assertTrue(symbols.none { it.fqn == "sample.Outer#run" })
+            assertTrue(
+                symbols.any {
+                    it.name == "run" && it.ownerFqn?.startsWith("sample.Outer.<anonymous@") == true
+                }
+            )
+        }
+    }
+
     private fun withStore(block: (XodusCodeIndexStore) -> Unit) {
         val store =
             XodusCodeIndexStore.open(createTempDirectory("java-source-producer-").resolve("index"))

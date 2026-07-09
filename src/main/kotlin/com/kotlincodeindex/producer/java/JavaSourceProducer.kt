@@ -111,12 +111,18 @@ class JavaSourceProducer : IndexProducer {
 
         override fun visitClass(node: ClassTree, data: Unit?) {
             val name = node.simpleName.toString()
-            if (name.isBlank()) {
-                return super.visitClass(node, data)
-            }
             val owner = classOwners.lastOrNull()
-            val fqn = if (owner == null) qualify(name) else "$owner.$name"
-            symbol(fqn, name, classKind(node.kind), node, ownerFqn = owner)
+            val fqn =
+                if (name.isBlank()) {
+                    val position = position(node)
+                    val anonymousName = "<anonymous@${position.line}:${position.column}>"
+                    owner?.let { "$it.$anonymousName" } ?: qualify(anonymousName)
+                } else {
+                    owner?.let { "$it.$name" } ?: qualify(name)
+                }
+            if (name.isNotBlank()) {
+                symbol(fqn, name, classKind(node.kind), node, ownerFqn = owner)
+            }
             classOwners.addLast(fqn)
             classMethodNames.addLast(
                 node.members
