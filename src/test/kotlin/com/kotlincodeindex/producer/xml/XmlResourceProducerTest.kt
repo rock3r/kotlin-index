@@ -19,6 +19,7 @@ class XmlResourceProducerTest {
                 <string name="title">Hello</string>
                 <item type="color" name="accent">#ff0000</item>
                 <item type="color" name="accent_alias">@color/accent</item>
+                <string-array name="items"><item>One</item></string-array>
             </resources>
             """
                 .trimIndent()
@@ -27,7 +28,8 @@ class XmlResourceProducerTest {
             <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android">
                 <TextView
                     android:id="@+id/title_view"
-                    android:text="@string/title" />
+                    android:text="@string/title"
+                    android:entries="@array/items" />
             </LinearLayout>
             """
                 .trimIndent()
@@ -52,6 +54,7 @@ class XmlResourceProducerTest {
             assertTrue(resources.any { it.fqn == "res:color:accent" })
             assertTrue(resources.any { it.fqn == "res:layout:main_screen" })
             assertTrue(resources.any { it.fqn == "res:id:title_view" })
+            assertTrue(resources.any { it.fqn == "res:array:items" })
 
             val references =
                 store
@@ -64,6 +67,9 @@ class XmlResourceProducerTest {
             )
             assertTrue(
                 references.any { it.symbolFqn == "res:color:accent" && it.context == "resource" }
+            )
+            assertTrue(
+                references.any { it.symbolFqn == "res:array:items" && it.context == "resource" }
             )
         }
     }

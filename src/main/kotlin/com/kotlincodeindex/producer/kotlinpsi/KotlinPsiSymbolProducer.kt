@@ -18,6 +18,8 @@ import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtParameter
 import org.jetbrains.kotlin.psi.KtProperty
 import org.jetbrains.kotlin.psi.KtSimpleNameExpression
+import org.jetbrains.kotlin.psi.KtSuperExpression
+import org.jetbrains.kotlin.psi.KtThisExpression
 
 class KotlinPsiSymbolProducer : IndexProducer {
     override val id: String = "kotlin-psi-symbols"
@@ -241,15 +243,19 @@ class KotlinPsiSymbolProducer : IndexProducer {
         val qualifiedParent = call.parent as? org.jetbrains.kotlin.psi.KtDotQualifiedExpression
         val receiver = qualifiedParent?.takeIf { it.selectorExpression == call }?.receiverExpression
         if (receiver != null) {
-            val receiverType =
+            val owner =
                 when (receiver) {
-                    is KtNameReferenceExpression -> variableTypes[receiver.getReferencedName()]
+                    is KtThisExpression,
+                    is KtSuperExpression -> names.classOwner(call)?.let(names::classFqn)
+                    is KtNameReferenceExpression ->
+                        variableTypes[receiver.getReferencedName()]?.let(names::qualifyType)
                     is KtCallExpression ->
-                        (receiver.calleeExpression as? KtSimpleNameExpression)?.getReferencedName()
-                    else -> receiver.text
+                        (receiver.calleeExpression as? KtSimpleNameExpression)
+                            ?.getReferencedName()
+                            ?.let(names::qualifyType)
+                    else -> names.qualifyType(receiver.text)
                 }
-            if (receiverType != null) {
-                val owner = names.qualifyType(receiverType)
+            if (owner != null) {
                 return InvocationTarget("$owner#$name", name, receiver.text)
             }
         }
@@ -346,11 +352,12 @@ private class KotlinSourceNames(
         val name = property.name ?: return emptyList()
         val accessorOwner = owner ?: fileFacadeFqn()
         val capitalized = name.replaceFirstChar { it.uppercaseChar() }
+        val declaredType = property.typeReference?.text?.removeSuffix("?")
         val isBooleanIsProperty =
             name.startsWith("is") &&
                 name.length > IS_PREFIX_LENGTH &&
                 name[IS_PREFIX_LENGTH].isUpperCase() &&
-                property.typeReference?.text?.removeSuffix("?") in BOOLEAN_TYPE_NAMES
+                (declaredType == null || declaredType in BOOLEAN_TYPE_NAMES)
         return buildList {
             if (isBooleanIsProperty) {
                 add("$accessorOwner#$name")

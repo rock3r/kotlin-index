@@ -10,38 +10,7 @@ import kotlin.test.assertTrue
 class CrossLanguageReferenceTest {
     @Test
     fun `Java and Kotlin member references share language-neutral target ids`() {
-        val sources =
-            mapOf(
-                "src/main/java/sample/JavaGreeter.java" to
-                    """
-                    package sample;
-                    public class JavaGreeter {
-                        public String title;
-                        public void greet() {}
-                        public void callKotlin(KotlinGreeter greeter) {
-                            greeter.greet();
-                            greeter.getTitle();
-                            KotlinGreeterKt.topLevelGreeting();
-                        }
-                    }
-                    """
-                        .trimIndent(),
-                "src/main/kotlin/sample/KotlinGreeter.kt" to
-                    """
-                    package sample
-                    class KotlinGreeter {
-                        val title: String = "hello"
-                        val isEnabled: Boolean = true
-                        fun greet() {}
-                        fun callJava(greeter: JavaGreeter) {
-                            greeter.greet()
-                            println(greeter.title)
-                        }
-                    }
-                    fun topLevelGreeting() {}
-                    """
-                        .trimIndent(),
-            )
+        val sources = crossLanguageSources()
 
         val store =
             XodusCodeIndexStore.open(createTempDirectory("cross-language-").resolve("index"))
@@ -59,6 +28,13 @@ class CrossLanguageReferenceTest {
                 refs.any {
                     it.relativeFile.endsWith("JavaGreeter.java") &&
                         it.symbolFqn == "sample.KotlinGreeter#greet"
+                }
+            )
+            assertTrue(
+                refs.any {
+                    it.relativeFile.endsWith("KotlinGreeter.kt") &&
+                        it.symbolFqn == "sample.KotlinGreeter#greet" &&
+                        it.qualifier == "this"
                 }
             )
             assertTrue(
@@ -105,4 +81,38 @@ class CrossLanguageReferenceTest {
             store.close()
         }
     }
+
+    private fun crossLanguageSources(): Map<String, String> =
+        mapOf(
+            "src/main/java/sample/JavaGreeter.java" to
+                """
+                package sample;
+                public class JavaGreeter {
+                    public String title;
+                    public void greet() {}
+                    public void callKotlin(KotlinGreeter greeter) {
+                        greeter.greet();
+                        greeter.getTitle();
+                        KotlinGreeterKt.topLevelGreeting();
+                    }
+                }
+                """
+                    .trimIndent(),
+            "src/main/kotlin/sample/KotlinGreeter.kt" to
+                """
+                package sample
+                class KotlinGreeter {
+                    val title: String = "hello"
+                    val isEnabled = true
+                    fun greet() {}
+                    fun callJava(greeter: JavaGreeter) {
+                        this.greet()
+                        greeter.greet()
+                        println(greeter.title)
+                    }
+                }
+                fun topLevelGreeting() {}
+                """
+                    .trimIndent(),
+        )
 }

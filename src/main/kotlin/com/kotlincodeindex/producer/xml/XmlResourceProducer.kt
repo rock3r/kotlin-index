@@ -141,7 +141,13 @@ class XmlResourceProducer : IndexProducer {
         if (name.isNullOrBlank()) {
             return null
         }
-        val type = if (element == "item") itemType else element
+        val rawType = if (element == "item") itemType else element
+        val type =
+            when (rawType) {
+                "string-array",
+                "integer-array" -> "array"
+                else -> rawType
+            }
         return type?.takeIf { it.isNotBlank() }?.let { ResourceName(it, name) }
     }
 
