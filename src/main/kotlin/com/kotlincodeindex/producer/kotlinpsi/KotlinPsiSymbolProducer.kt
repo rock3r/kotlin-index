@@ -481,8 +481,19 @@ private class KotlinSourceNames(
 
     fun fileFacadeFqn(): String =
         qualify(
-            file.name.substringAfterLast('/').substringAfterLast('\\').substringBeforeLast('.') +
-                "Kt"
+            file.fileAnnotationList
+                ?.annotationEntries
+                ?.firstOrNull { it.shortName?.asString() == "JvmName" }
+                ?.valueArguments
+                ?.singleOrNull()
+                ?.getArgumentExpression()
+                ?.text
+                ?.removeSurrounding("\"")
+                ?.takeIf { it.isNotBlank() }
+                ?: (file.name
+                    .substringAfterLast('/')
+                    .substringAfterLast('\\')
+                    .substringBeforeLast('.') + "Kt")
         )
 
     fun propertyAliases(owner: String?, property: KtProperty): List<String> {

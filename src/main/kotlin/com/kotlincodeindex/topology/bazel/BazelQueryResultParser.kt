@@ -10,9 +10,11 @@ object BazelQueryResultParser {
         }
         val withoutPrefix = trimmed.removePrefix("//")
         val separator = withoutPrefix.indexOf(':')
-        if (separator <= 0) {
+        if (separator < 0) {
             return@mapNotNull null
         }
-        withoutPrefix.substring(0, separator) + "/" + withoutPrefix.substring(separator + 1)
+        val packagePath = withoutPrefix.substring(0, separator)
+        val targetPath = withoutPrefix.substring(separator + 1)
+        if (packagePath.isBlank()) targetPath else "$packagePath/$targetPath"
     }
 }

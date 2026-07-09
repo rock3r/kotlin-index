@@ -74,7 +74,7 @@ class CrossLanguageReferenceTest {
             assertTrue(
                 symbols.any {
                     it.fqn == "sample.topLevelGreeting" &&
-                        "sample.KotlinGreeterKt#topLevelGreeting" in it.aliases
+                        "sample.GreeterApi#topLevelGreeting" in it.aliases
                 }
             )
         } finally {
@@ -442,13 +442,14 @@ class CrossLanguageReferenceTest {
                     public void callKotlin(KotlinGreeter greeter) {
                         greeter.greet();
                         greeter.getTitle();
-                        KotlinGreeterKt.topLevelGreeting();
+                        GreeterApi.topLevelGreeting();
                     }
                 }
                 """
                     .trimIndent(),
             "src/main/kotlin/sample/KotlinGreeter.kt" to
                 """
+                @file:JvmName("GreeterApi")
                 package sample
                 class KotlinGreeter {
                     val title: String = "hello"

@@ -28,6 +28,8 @@ class BazelQueryResultParserTest {
                     "//app:src/main/kotlin/App.kt",
                     "//app:src/main/java/Panel.java",
                     "//app:src/main/res/layout/main.xml",
+                    "//:src/main/java/RootApp.java",
+                    "//:src/main/res/layout/root.xml",
                     "@maven//:external.jar",
                 )
             )
@@ -37,6 +39,8 @@ class BazelQueryResultParserTest {
                 "app/src/main/kotlin/App.kt",
                 "app/src/main/java/Panel.java",
                 "app/src/main/res/layout/main.xml",
+                "src/main/java/RootApp.java",
+                "src/main/res/layout/root.xml",
             ),
             paths,
         )
