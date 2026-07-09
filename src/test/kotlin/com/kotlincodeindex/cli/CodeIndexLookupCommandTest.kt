@@ -91,6 +91,22 @@ class CodeIndexLookupCommandTest {
         assertTrue(result.output.contains("values/strings.xml"))
     }
 
+    @Test
+    fun `find references expands Android resource aliases`() {
+        val workspace = indexedWorkspace()
+        val result =
+            runCli(
+                "find-references",
+                "--project",
+                workspace.toString(),
+                "--symbol",
+                "@string/title",
+            )
+
+        assertEquals(0, result.statusCode, result.output)
+        assertTrue(result.output.contains("\"symbolFqn\":\"res:string:title\""))
+    }
+
     private fun indexedWorkspace(): java.nio.file.Path {
         val workspace = createTempDirectory("lookup-cli-")
         tempDirs.add(workspace)
@@ -190,6 +206,10 @@ class CodeIndexLookupCommandTest {
             ),
             facadeReference,
         )
+        populateResourceRecords(store)
+    }
+
+    private fun populateResourceRecords(store: XodusCodeIndexStore) {
         val resource =
             SymbolRecord(
                 fqn = "res:string:title",
@@ -199,10 +219,29 @@ class CodeIndexLookupCommandTest {
                 name = "title",
                 language = "xml",
                 ownerFqn = "res:string",
+                aliases = listOf("@string/title"),
             )
         store.put(
             CodeIndexKey.resource("string", "title", resource.relativeFile, resource.line),
             resource,
+        )
+        val resourceReference =
+            ReferenceRecord(
+                symbolFqn = "res:string:title",
+                relativeFile = "app/src/main/res/layout/main.xml",
+                line = 4,
+                column = 12,
+                context = "resource",
+                language = "xml",
+            )
+        store.put(
+            CodeIndexKey.ref(
+                resourceReference.symbolFqn,
+                resourceReference.relativeFile,
+                resourceReference.line,
+                resourceReference.column,
+            ),
+            resourceReference,
         )
     }
 

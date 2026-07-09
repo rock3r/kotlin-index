@@ -25,6 +25,7 @@ class JavaSourceProducerTest {
 
                 public void render(List<String> items) {
                     helper(items.size());
+                    this.helper(items.size());
                 }
 
                 private void helper(int count) {}
@@ -61,6 +62,7 @@ class JavaSourceProducerTest {
             assertTrue(
                 references.any { it.symbolFqn == "sample.Panel#helper" && it.context == "call" }
             )
+            assertEquals(2, references.count { it.symbolFqn == "sample.Panel#helper" })
         }
     }
 

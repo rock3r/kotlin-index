@@ -346,12 +346,27 @@ private class KotlinSourceNames(
         val name = property.name ?: return emptyList()
         val accessorOwner = owner ?: fileFacadeFqn()
         val capitalized = name.replaceFirstChar { it.uppercaseChar() }
+        val isBooleanIsProperty =
+            name.startsWith("is") &&
+                name.length > IS_PREFIX_LENGTH &&
+                name[IS_PREFIX_LENGTH].isUpperCase() &&
+                property.typeReference?.text?.removeSuffix("?") in BOOLEAN_TYPE_NAMES
         return buildList {
-            add("$accessorOwner#get$capitalized")
+            if (isBooleanIsProperty) {
+                add("$accessorOwner#$name")
+            } else {
+                add("$accessorOwner#get$capitalized")
+            }
             if (property.isVar) {
-                add("$accessorOwner#set$capitalized")
+                val setterName = if (isBooleanIsProperty) name.removePrefix("is") else capitalized
+                add("$accessorOwner#set$setterName")
             }
         }
+    }
+
+    private companion object {
+        const val IS_PREFIX_LENGTH = 2
+        val BOOLEAN_TYPE_NAMES = setOf("Boolean", "kotlin.Boolean")
     }
 }
 

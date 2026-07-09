@@ -64,6 +64,15 @@ class XmlResourceProducer : IndexProducer {
                         }
                     }
                     XMLStreamConstants.END_ELEMENT -> depth--
+                    XMLStreamConstants.CHARACTERS,
+                    XMLStreamConstants.CDATA ->
+                        indexAttribute(
+                            store,
+                            relativePath,
+                            reader.text,
+                            reader.location.lineNumber.coerceAtLeast(1),
+                            reader.location.columnNumber.coerceAtLeast(1),
+                        )
                 }
             }
             reader.close()
@@ -157,7 +166,7 @@ class XmlResourceProducer : IndexProducer {
         const val CREATE_MARKER_GROUP = 1
         const val RESOURCE_TYPE_GROUP = 2
         const val RESOURCE_NAME_GROUP = 3
-        val RESOURCE_PATH = Regex("(?:^|/)src/[^/]+/res/([^/]+)/([^/]+)\\.xml$")
+        val RESOURCE_PATH = Regex("(?:^|/)(?:src/[^/]+/)?res/([^/]+)/([^/]+)\\.xml$")
         val RESOURCE_REFERENCE =
             Regex("[@?](\\+)?(?:[A-Za-z0-9_.]+:)?([A-Za-z0-9_]+)/([A-Za-z0-9_.]+)")
     }

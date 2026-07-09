@@ -67,8 +67,8 @@ class FindReferencesCommand : CliktCommand(name = "find-references") {
 
     internal fun findReferences(store: CodeIndexStore, symbol: String): List<ReferenceRecord> {
         val targetIds = linkedSetOf(symbol)
-        store
-            .prefixScan("sym:")
+        sequenceOf("sym:", "res:")
+            .flatMap(store::prefixScan)
             .map { it.second }
             .filterIsInstance<SymbolRecord>()
             .filter { it.fqn == symbol || symbol in it.aliases }

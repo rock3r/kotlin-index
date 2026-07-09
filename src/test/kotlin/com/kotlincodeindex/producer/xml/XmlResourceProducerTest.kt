@@ -18,6 +18,7 @@ class XmlResourceProducerTest {
             <resources>
                 <string name="title">Hello</string>
                 <item type="color" name="accent">#ff0000</item>
+                <item type="color" name="accent_alias">@color/accent</item>
             </resources>
             """
                 .trimIndent()
@@ -61,6 +62,9 @@ class XmlResourceProducerTest {
             assertTrue(
                 references.any { it.symbolFqn == "res:string:title" && it.context == "resource" }
             )
+            assertTrue(
+                references.any { it.symbolFqn == "res:color:accent" && it.context == "resource" }
+            )
         }
     }
 
@@ -89,6 +93,24 @@ class XmlResourceProducerTest {
                     .exceptionOrNull()
             assertNotNull(failure)
             assertTrue(failure.message.orEmpty().contains("strings.xml"))
+        }
+    }
+
+    @Test
+    fun `indexes file resources from Bazel style res paths`() {
+        withStore { store ->
+            val producer = assertNotNull(ProducerRegistry.get("xml-resources"))
+            producer.produce(
+                IndexBuildContext.forInlineSources(
+                    store = store,
+                    commitHash = "abc",
+                    sourceFiles = mapOf("app/res/layout/bazel_screen.xml" to "<FrameLayout />"),
+                )
+            )
+
+            val resources =
+                store.prefixScan("res:").map { it.second }.filterIsInstance<SymbolRecord>().toList()
+            assertTrue(resources.any { it.fqn == "res:layout:bazel_screen" })
         }
     }
 

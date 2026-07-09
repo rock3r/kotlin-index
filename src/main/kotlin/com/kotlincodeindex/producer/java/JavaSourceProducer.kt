@@ -182,11 +182,17 @@ class JavaSourceProducer : IndexProducer {
 
         private fun resolveReceiverType(receiver: Tree): String? =
             when (receiver) {
-                is IdentifierTree ->
-                    variableScopes
-                        .reversed()
-                        .firstNotNullOfOrNull { it[receiver.name.toString()] }
-                        ?.let(::qualifyType) ?: qualifyType(receiver.name.toString())
+                is IdentifierTree -> {
+                    val name = receiver.name.toString()
+                    if (name == "this" || name == "super") {
+                        classOwners.lastOrNull()
+                    } else {
+                        variableScopes
+                            .reversed()
+                            .firstNotNullOfOrNull { it[name] }
+                            ?.let(::qualifyType) ?: qualifyType(name)
+                    }
+                }
                 is NewClassTree -> qualifyType(receiver.identifier.toString())
                 is MemberSelectTree -> qualifyType(receiver.toString())
                 else -> null

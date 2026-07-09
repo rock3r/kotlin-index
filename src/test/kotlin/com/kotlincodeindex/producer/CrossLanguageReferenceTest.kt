@@ -31,6 +31,7 @@ class CrossLanguageReferenceTest {
                     package sample
                     class KotlinGreeter {
                         val title: String = "hello"
+                        val isEnabled: Boolean = true
                         fun greet() {}
                         fun callJava(greeter: JavaGreeter) {
                             greeter.greet()
@@ -86,6 +87,12 @@ class CrossLanguageReferenceTest {
                 symbols.any {
                     it.fqn == "sample.KotlinGreeter#title" &&
                         "sample.KotlinGreeter#getTitle" in it.aliases
+                }
+            )
+            assertTrue(
+                symbols.any {
+                    it.fqn == "sample.KotlinGreeter#isEnabled" &&
+                        "sample.KotlinGreeter#isEnabled" in it.aliases
                 }
             )
             assertTrue(
