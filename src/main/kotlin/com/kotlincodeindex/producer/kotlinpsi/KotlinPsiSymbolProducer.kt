@@ -241,7 +241,22 @@ class KotlinPsiSymbolProducer : IndexProducer {
             val receiverType =
                 resolveVariableType(receiver, receiver.getReferencedName()) ?: return@forEach
             val name = selector.getReferencedName()
-            val target = "${names.qualifyType(receiverType)}#$name"
+            val owner = names.qualifyType(receiverType)
+            val target = "$owner#$name"
+            val capitalized = name.replaceFirstChar { it.uppercaseChar() }
+            val booleanGetter =
+                if (
+                    name.startsWith("is") &&
+                        name.length > BOOLEAN_PREFIX_LENGTH &&
+                        name[BOOLEAN_PREFIX_LENGTH].isUpperCase()
+                ) {
+                    "$owner#$name"
+                } else {
+                    "$owner#is$capitalized"
+                }
+            val candidates =
+                listOf(target, "$owner#get$capitalized", booleanGetter, "$owner#set$capitalized")
+                    .distinct()
             val line = selector.lineNumber()
             val column = selector.columnNumber()
             store.put(
@@ -255,7 +270,7 @@ class KotlinPsiSymbolProducer : IndexProducer {
                     language = LANGUAGE,
                     referencedName = name,
                     qualifier = receiver.text,
-                    candidateSymbolFqns = listOf(target),
+                    candidateSymbolFqns = candidates,
                 ),
             )
         }
@@ -441,6 +456,7 @@ class KotlinPsiSymbolProducer : IndexProducer {
 
     private companion object {
         const val LANGUAGE = "kotlin"
+        const val BOOLEAN_PREFIX_LENGTH = 2
     }
 }
 

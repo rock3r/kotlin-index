@@ -14,6 +14,7 @@ import com.sun.source.tree.EnhancedForLoopTree
 import com.sun.source.tree.ForLoopTree
 import com.sun.source.tree.IdentifierTree
 import com.sun.source.tree.ImportTree
+import com.sun.source.tree.LambdaExpressionTree
 import com.sun.source.tree.MemberSelectTree
 import com.sun.source.tree.MethodInvocationTree
 import com.sun.source.tree.MethodTree
@@ -202,14 +203,15 @@ class JavaSourceProducer : IndexProducer {
         }
 
         override fun scan(tree: Tree?, data: Unit?) {
-            val loopScope = tree is ForLoopTree || tree is EnhancedForLoopTree
-            if (loopScope) {
+            val transientScope =
+                tree is ForLoopTree || tree is EnhancedForLoopTree || tree is LambdaExpressionTree
+            if (transientScope) {
                 variableScopes.addLast(mutableMapOf())
             }
             try {
                 super.scan(tree, data)
             } finally {
-                if (loopScope) {
+                if (transientScope) {
                     variableScopes.removeLast()
                 }
             }

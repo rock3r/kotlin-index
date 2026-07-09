@@ -316,6 +316,45 @@ class JavaSourceProducerTest {
         }
     }
 
+    @Test
+    fun `typed Java lambda parameters expire after the lambda`() {
+        val source =
+            """
+            package sample;
+            import java.util.List;
+            class First { void render() {} }
+            class Second { void render() {} }
+            class Caller {
+                First item;
+                void call(List<Second> items) {
+                    items.forEach((Second item) -> item.render());
+                    item.render();
+                }
+            }
+            """
+                .trimIndent()
+
+        withStore { store ->
+            val producer = assertNotNull(ProducerRegistry.get("java-source"))
+            producer.produce(
+                IndexBuildContext.forInlineSources(
+                    store = store,
+                    commitHash = "abc",
+                    sourceFiles = mapOf("Caller.java" to source),
+                )
+            )
+
+            val references =
+                store
+                    .prefixScan("ref:")
+                    .map { it.second }
+                    .filterIsInstance<ReferenceRecord>()
+                    .toList()
+            assertEquals(1, references.count { it.symbolFqn == "sample.Second#render" })
+            assertEquals(1, references.count { it.symbolFqn == "sample.First#render" })
+        }
+    }
+
     private fun withStore(block: (XodusCodeIndexStore) -> Unit) {
         val store =
             XodusCodeIndexStore.open(createTempDirectory("java-source-producer-").resolve("index"))

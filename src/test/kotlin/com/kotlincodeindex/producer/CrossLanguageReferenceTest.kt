@@ -56,6 +56,13 @@ class CrossLanguageReferenceTest {
                         it.context == "member"
                 }
             )
+            assertTrue(
+                refs.any {
+                    it.relativeFile.endsWith("KotlinGreeter.kt") &&
+                        it.symbolFqn == "sample.JavaGreeter#name" &&
+                        "sample.JavaGreeter#getName" in it.candidateSymbolFqns
+                }
+            )
 
             val symbols =
                 store.prefixScan("sym:").map { it.second }.filterIsInstance<SymbolRecord>().toList()
@@ -438,6 +445,7 @@ class CrossLanguageReferenceTest {
                 package sample;
                 public class JavaGreeter {
                     public String title;
+                    public String getName() { return "hello"; }
                     public void greet() {}
                     public void callKotlin(KotlinGreeter greeter) {
                         greeter.greet();
@@ -459,6 +467,7 @@ class CrossLanguageReferenceTest {
                         this.greet()
                         greeter.greet()
                         println(greeter.title)
+                        println(greeter.name)
                     }
                 }
                 fun topLevelGreeting() {}
