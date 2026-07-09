@@ -209,8 +209,9 @@ class JavaSourceProducerTest {
             class First { void render() {} }
             class Second { void render() {} }
             class Caller {
-                void call() {
+                void call(Iterable<Second> items) {
                     { Second model = null; model.render(); this.model.render(); }
+                    for (Second model : items) { model.render(); }
                     model.render();
                 }
                 First model;
@@ -234,7 +235,7 @@ class JavaSourceProducerTest {
                     .map { it.second }
                     .filterIsInstance<ReferenceRecord>()
                     .toList()
-            assertEquals(1, references.count { it.symbolFqn == "sample.Second#render" })
+            assertEquals(2, references.count { it.symbolFqn == "sample.Second#render" })
             assertEquals(2, references.count { it.symbolFqn == "sample.First#render" })
             assertTrue(references.none { it.symbolFqn == "this.model#render" })
         }
@@ -246,9 +247,10 @@ class JavaSourceProducerTest {
             """
             package sample;
             class Outer {
+                void helper() {}
                 void call() {
                     Runnable task = new Runnable() {
-                        public void run() {}
+                        public void run() { helper(); }
                     };
                 }
             }
@@ -273,6 +275,13 @@ class JavaSourceProducerTest {
                     it.name == "run" && it.ownerFqn?.startsWith("sample.Outer.<anonymous@") == true
                 }
             )
+            val references =
+                store
+                    .prefixScan("ref:")
+                    .map { it.second }
+                    .filterIsInstance<ReferenceRecord>()
+                    .toList()
+            assertTrue(references.any { it.symbolFqn == "sample.Outer#helper" })
         }
     }
 

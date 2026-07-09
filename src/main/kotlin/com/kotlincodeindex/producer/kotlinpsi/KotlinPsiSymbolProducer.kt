@@ -354,13 +354,13 @@ class KotlinPsiSymbolProducer : IndexProducer {
                             ?.typeReference
                             ?.text
                     is KtClass ->
-                        scope.primaryConstructorParameters
+                        scope.declarations
+                            .filterIsInstance<KtProperty>()
                             .firstOrNull { it.name == name }
                             ?.typeReference
                             ?.text
-                            ?: scope.declarations
-                                .filterIsInstance<KtProperty>()
-                                .firstOrNull { it.name == name }
+                            ?: scope.primaryConstructorParameters
+                                .firstOrNull { it.hasValOrVar() && it.name == name }
                                 ?.typeReference
                                 ?.text
                     is KtClassOrObject ->

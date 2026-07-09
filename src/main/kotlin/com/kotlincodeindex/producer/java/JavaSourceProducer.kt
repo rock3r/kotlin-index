@@ -10,6 +10,8 @@ import com.kotlincodeindex.producer.SourceRecordCleanup
 import com.sun.source.tree.BlockTree
 import com.sun.source.tree.ClassTree
 import com.sun.source.tree.CompilationUnitTree
+import com.sun.source.tree.EnhancedForLoopTree
+import com.sun.source.tree.ForLoopTree
 import com.sun.source.tree.IdentifierTree
 import com.sun.source.tree.ImportTree
 import com.sun.source.tree.MemberSelectTree
@@ -197,6 +199,20 @@ class JavaSourceProducer : IndexProducer {
             }
         }
 
+        override fun scan(tree: Tree?, data: Unit?) {
+            val loopScope = tree is ForLoopTree || tree is EnhancedForLoopTree
+            if (loopScope) {
+                variableScopes.addLast(mutableMapOf())
+            }
+            try {
+                super.scan(tree, data)
+            } finally {
+                if (loopScope) {
+                    variableScopes.removeLast()
+                }
+            }
+        }
+
         override fun visitMethodInvocation(node: MethodInvocationTree, data: Unit?) {
             val target = resolveInvocation(node.methodSelect)
             if (target != null) {
@@ -218,10 +234,16 @@ class JavaSourceProducer : IndexProducer {
                 is IdentifierTree -> {
                     val name = select.name.toString()
                     val classOwner = classOwners.lastOrNull() ?: return null
+                    val localOwner =
+                        classOwners
+                            .zip(classMethodNames)
+                            .toList()
+                            .asReversed()
+                            .firstOrNull { name in it.second }
+                            ?.first
                     val explicitStaticOwner = staticImports[name]
                     when {
-                        name in classMethodNames.lastOrNull().orEmpty() ->
-                            invocationTarget(classOwner, name, null)
+                        localOwner != null -> invocationTarget(localOwner, name, null)
                         explicitStaticOwner != null ->
                             invocationTarget(explicitStaticOwner, name, null)
                         staticWildcardImports.isNotEmpty() ->
@@ -365,15 +387,6 @@ class JavaSourceProducer : IndexProducer {
             )
         }
 
-        private fun classKind(kind: Tree.Kind): String =
-            when (kind) {
-                Tree.Kind.INTERFACE -> "interface"
-                Tree.Kind.ENUM -> "enum"
-                Tree.Kind.RECORD -> "record"
-                Tree.Kind.ANNOTATION_TYPE -> "annotation"
-                else -> "class"
-            }
-
         private data class SourcePosition(val line: Int, val column: Int)
 
         private data class InvocationTarget(
@@ -403,3 +416,12 @@ private fun javaBeanPropertyName(name: String): String? {
 private const val GETTER_PREFIX_LENGTH = 3
 private const val SETTER_PREFIX_LENGTH = 3
 private const val BOOLEAN_PREFIX_LENGTH = 2
+
+private fun classKind(kind: Tree.Kind): String =
+    when (kind) {
+        Tree.Kind.INTERFACE -> "interface"
+        Tree.Kind.ENUM -> "enum"
+        Tree.Kind.RECORD -> "record"
+        Tree.Kind.ANNOTATION_TYPE -> "annotation"
+        else -> "class"
+    }

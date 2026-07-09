@@ -342,6 +342,43 @@ class CrossLanguageReferenceTest {
         }
     }
 
+    @Test
+    fun `Kotlin member properties shadow non-property constructor parameters`() {
+        val source =
+            """
+            package sample
+            class FirstRenderer { fun render() {} }
+            class SecondRenderer { fun render() {} }
+            class Holder(renderer: FirstRenderer) {
+                val renderer: SecondRenderer = SecondRenderer()
+                fun call() { renderer.render() }
+            }
+            """
+                .trimIndent()
+        val store =
+            XodusCodeIndexStore.open(createTempDirectory("constructor-shadow-").resolve("index"))
+        try {
+            val context =
+                IndexBuildContext.forInlineSources(
+                    store,
+                    "abc",
+                    mapOf("src/main/kotlin/sample/Holder.kt" to source),
+                )
+            ProducerRegistry.forApplications(emptyList()).forEach { it.produce(context, store) }
+
+            val refs =
+                store
+                    .prefixScan("ref:")
+                    .map { it.second }
+                    .filterIsInstance<ReferenceRecord>()
+                    .toList()
+            assertTrue(refs.any { it.symbolFqn == "sample.SecondRenderer#render" })
+            assertTrue(refs.none { it.symbolFqn == "sample.FirstRenderer#render" })
+        } finally {
+            store.close()
+        }
+    }
+
     private fun crossLanguageSources(): Map<String, String> =
         mapOf(
             "src/main/java/sample/JavaGreeter.java" to
