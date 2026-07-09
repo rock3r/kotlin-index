@@ -3,6 +3,7 @@ package com.kotlincodeindex.cli
 import com.kotlincodeindex.core.manifest.ManifestIO
 import com.kotlincodeindex.core.path.IndexPathResolver
 import com.kotlincodeindex.core.record.FileHashRecord
+import com.kotlincodeindex.core.record.SymbolRecord
 import com.kotlincodeindex.core.xodus.XodusCodeIndexStore
 import com.kotlincodeindex.topology.bazel.BazelProcessRunner
 import com.kotlincodeindex.topology.bazel.BazelQueryOutcome
@@ -58,7 +59,7 @@ class IndexCommandTest {
         assertEquals(commit, manifest.commit)
         assertEquals("//plugins/foo/ui:ui", manifest.scope)
         assertEquals("bazel-query", manifest.topology)
-        assertEquals(2, manifest.sourceFileCount)
+        assertEquals(3, manifest.sourceFileCount)
         assertTrue(manifest.sourcesContentHash.startsWith("sha256:"))
         assertTrue(manifest.builtAt.isNotBlank())
         assertEquals(emptyList(), manifest.applications)
@@ -66,8 +67,11 @@ class IndexCommandTest {
         val store = XodusCodeIndexStore.open(resolver.resolveBaseStore(commit), readOnly = true)
         try {
             val fileRecords = store.prefixScan("file:").toList()
-            assertEquals(2, fileRecords.size)
+            assertEquals(3, fileRecords.size)
             fileRecords.forEach { (_, record) -> assertTrue(record is FileHashRecord) }
+            val symbols =
+                store.prefixScan("sym:").map { it.second }.filterIsInstance<SymbolRecord>().toList()
+            assertTrue(symbols.any { it.fqn == "sample.Legacy" && it.language == "java" })
         } finally {
             store.close()
         }

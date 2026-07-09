@@ -14,7 +14,18 @@ class FileHashProducer : IndexProducer {
     override val displayName: String = "FileHashProducer"
 
     override fun produce(context: IndexBuildContext, store: CodeIndexStore) {
-        val files = context.sourceFiles
+        val currentFiles = context.sourceFiles.toSet()
+        store
+            .prefixScan("file:")
+            .filter { (_, record) ->
+                record is FileHashRecord &&
+                    (record.relativePath !in currentFiles ||
+                        record.relativePath in context.changedSourceFiles)
+            }
+            .map { it.first }
+            .toList()
+            .forEach(store::delete)
+        val files = context.sourceFiles.filter { it in context.changedSourceFiles }
         files.forEachIndexed { index, relativePath ->
             context.reportFileProgress(index + 1, files.size, relativePath)
             val content = context.readSource(relativePath)

@@ -51,4 +51,32 @@ class FileHashProducerTest {
             assertTrue(context.sourceFiles.contains(fileRecord.relativePath))
         }
     }
+
+    @Test
+    fun `reindex removes stale hashes after content changes or files disappear`() {
+        val producer = FileHashProducer()
+        producer.produce(
+            IndexBuildContext.forInlineSources(
+                store = store,
+                commitHash = "abc123",
+                sourceFiles = mapOf("A.java" to "class A {}", "layout.xml" to "<FrameLayout />"),
+            )
+        )
+        producer.produce(
+            IndexBuildContext.forInlineSources(
+                store = store,
+                commitHash = "abc123",
+                sourceFiles = mapOf("A.java" to "class A { int value; }"),
+            )
+        )
+
+        val records =
+            store.prefixScan("file:").map { it.second }.filterIsInstance<FileHashRecord>().toList()
+        assertEquals(1, records.size)
+        assertEquals("A.java", records.single().relativePath)
+        assertEquals(
+            FileHashProducer.contentHash("class A { int value; }"),
+            records.single().contentHash,
+        )
+    }
 }

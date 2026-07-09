@@ -7,11 +7,16 @@ import com.kotlincodeindex.core.store.CodeIndexStore
 import com.kotlincodeindex.parse.KotlinPsiParser
 import com.kotlincodeindex.producer.IndexBuildContext
 import com.kotlincodeindex.producer.IndexProducer
+import com.kotlincodeindex.producer.SourceRecordCleanup
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtClass
-import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
+import org.jetbrains.kotlin.psi.KtClassOrObject
+import org.jetbrains.kotlin.psi.KtElement
 import org.jetbrains.kotlin.psi.KtFile
+import org.jetbrains.kotlin.psi.KtNameReferenceExpression
 import org.jetbrains.kotlin.psi.KtNamedFunction
+import org.jetbrains.kotlin.psi.KtParameter
+import org.jetbrains.kotlin.psi.KtProperty
 import org.jetbrains.kotlin.psi.KtSimpleNameExpression
 
 class KotlinPsiSymbolProducer : IndexProducer {
@@ -20,109 +25,337 @@ class KotlinPsiSymbolProducer : IndexProducer {
     override val displayName: String = "KotlinPsiSymbolProducer"
 
     override fun produce(context: IndexBuildContext, store: CodeIndexStore) {
-        deleteStaleSymbolKeys(store)
+        val affectedFiles =
+            (context.changedSourceFiles + context.deletedSourceFiles).filterTo(linkedSetOf()) {
+                it.endsWith(".kt")
+            }
+        SourceRecordCleanup.deleteLanguageRecords(store, LANGUAGE, ".kt", affectedFiles)
         KotlinPsiParser().use { parser ->
-            val ktFiles = context.sourceFiles.filter { it.endsWith(".kt") }
+            val ktFiles =
+                context.sourceFiles.filter {
+                    it.endsWith(".kt") && it in context.changedSourceFiles
+                }
             ktFiles.forEachIndexed { index, relativePath ->
                 context.reportFileProgress(index + 1, ktFiles.size, relativePath)
-                val file = parser.parseFile(relativePath, context.readSource(relativePath))
-                val symbols = collectSymbols(file)
-                for (symbol in symbols) {
-                    store.put(
-                        CodeIndexKey.sym(symbol.fqn),
-                        SymbolRecord(
-                            fqn = symbol.fqn,
-                            relativeFile = relativePath,
-                            line = symbol.line,
-                            kind = symbol.kind,
-                            name = symbol.name,
-                        ),
-                    )
-                }
-                for (call in file.collectDescendantsOfType<KtCallExpression>()) {
-                    val callee = extractCalleeName(call)
-                    val resolved = callee?.let { resolveSymbol(it, symbols) }
-                    if (callee != null && resolved != null) {
-                        val line = call.lineNumber()
-                        val column = call.columnNumber()
-                        store.put(
-                            CodeIndexKey.ref(resolved.fqn, relativePath, line),
-                            ReferenceRecord(
-                                symbolFqn = resolved.fqn,
-                                relativeFile = relativePath,
-                                line = line,
-                                column = column,
-                            ),
-                        )
-                    }
-                }
+                indexFile(
+                    parser.parseFile(relativePath, context.readSource(relativePath)),
+                    relativePath,
+                    store,
+                )
             }
         }
     }
 
-    private fun deleteStaleSymbolKeys(store: CodeIndexStore) {
-        store.prefixScan("sym:").forEach { (key, _) -> store.delete(key) }
-        store.prefixScan("ref:").forEach { (key, _) -> store.delete(key) }
+    private fun indexFile(file: KtFile, relativePath: String, store: CodeIndexStore) {
+        val symbols = collectSymbols(file)
+        symbols.forEach { symbol ->
+            store.put(
+                CodeIndexKey.symbolDefinition(symbol.fqn, relativePath, symbol.line, symbol.column),
+                SymbolRecord(
+                    fqn = symbol.fqn,
+                    relativeFile = relativePath,
+                    line = symbol.line,
+                    kind = symbol.kind,
+                    name = symbol.name,
+                    language = LANGUAGE,
+                    ownerFqn = symbol.ownerFqn,
+                    signature = symbol.signature,
+                    arity = symbol.arity,
+                    aliases = symbol.aliases,
+                ),
+            )
+        }
+
+        val imports =
+            file.importDirectives
+                .mapNotNull { it.importPath?.pathStr }
+                .filterNot { it.endsWith(".*") }
+                .associateBy { it.substringAfterLast('.') }
+        val variableTypes = collectVariableTypes(file)
+        for (call in file.collectDescendantsOfType<KtCallExpression>()) {
+            val target = resolveCall(file, call, symbols, imports, variableTypes) ?: continue
+            val line = call.lineNumber()
+            val column = call.columnNumber()
+            store.put(
+                CodeIndexKey.ref(target.symbolFqn, relativePath, line, column),
+                ReferenceRecord(
+                    symbolFqn = target.symbolFqn,
+                    relativeFile = relativePath,
+                    line = line,
+                    column = column,
+                    context = "call",
+                    language = LANGUAGE,
+                    referencedName = target.name,
+                    qualifier = target.qualifier,
+                    candidateSymbolFqns = listOf(target.symbolFqn),
+                    arity = call.valueArguments.size,
+                ),
+            )
+        }
+        indexMemberReferences(file, relativePath, store, imports, variableTypes)
     }
 
     private fun collectSymbols(file: KtFile): List<ResolvedSymbol> {
-        val pkg = file.packageFqName.asString().takeIf { it.isNotBlank() }
         val results = mutableListOf<ResolvedSymbol>()
-        for (cls in file.collectDescendantsOfType<KtClass>()) {
-            val name = cls.name ?: continue
-            val fqn = listOfNotNull(pkg, name).joinToString(".")
-            results += ResolvedSymbol(fqn, name, cls.lineNumber(), "class")
-        }
-        for (fn in file.collectDescendantsOfType<KtNamedFunction>()) {
-            val name = fn.name ?: continue
-            val fqn = listOfNotNull(pkg, name).joinToString(".")
-            results += ResolvedSymbol(fqn, name, fn.lineNumber(), "function")
-        }
+        results += collectClassSymbols(file)
+        results += collectFunctionSymbols(file)
+        results += collectPropertySymbols(file)
         return results
     }
 
-    private fun resolveSymbol(callee: String, symbols: List<ResolvedSymbol>): ResolvedSymbol? =
-        symbols.firstOrNull {
-            it.name == callee
-        }
-
-    private fun extractCalleeName(call: KtCallExpression): String? {
-        val callee = call.calleeExpression ?: return null
-        return when (callee) {
-            is KtSimpleNameExpression -> callee.getReferencedName()
-            is KtDotQualifiedExpression ->
-                (callee.selectorExpression as? KtSimpleNameExpression)?.getReferencedName()
-            else -> null
+    private fun collectClassSymbols(file: KtFile): List<ResolvedSymbol> = buildList {
+        val names = KotlinSourceNames(file)
+        for (declaration in file.collectDescendantsOfType<KtClass>()) {
+            val name = declaration.name ?: continue
+            val owner = names.classOwner(declaration)?.let(names::classFqn)
+            val fqn = owner?.let { "$it.$name" } ?: names.qualify(name)
+            add(
+                ResolvedSymbol(
+                    fqn = fqn,
+                    name = name,
+                    line = declaration.lineNumber(),
+                    column = declaration.columnNumber(),
+                    kind = if (declaration.isInterface()) "interface" else "class",
+                    ownerFqn = owner,
+                )
+            )
         }
     }
 
-    private fun KtNamedFunction.lineNumber(): Int = lineNumberFromOffset(textRange.startOffset)
-
-    private fun KtClass.lineNumber(): Int = lineNumberFromOffset(textRange.startOffset)
-
-    private fun KtCallExpression.lineNumber(): Int = lineNumberFromOffset(textRange.startOffset)
-
-    private fun KtCallExpression.columnNumber(): Int {
-        val doc = containingFile.viewProvider.document ?: return 1
-        val line = doc.getLineNumber(textRange.startOffset)
-        return textRange.startOffset - doc.getLineStartOffset(line) + 1
+    private fun collectFunctionSymbols(file: KtFile): List<ResolvedSymbol> = buildList {
+        val names = KotlinSourceNames(file)
+        for (function in file.collectDescendantsOfType<KtNamedFunction>()) {
+            val name = function.name ?: continue
+            val owner = names.classOwner(function)?.let(names::classFqn)
+            val fqn = owner?.let { "$it#$name" } ?: names.qualify(name)
+            val signature =
+                function.valueParameters.joinToString(prefix = "(", postfix = ")") {
+                    it.typeReference?.text.orEmpty()
+                }
+            add(
+                ResolvedSymbol(
+                    fqn = fqn,
+                    name = name,
+                    line = function.lineNumber(),
+                    column = function.columnNumber(),
+                    kind = "function",
+                    ownerFqn = owner,
+                    signature = signature,
+                    arity = function.valueParameters.size,
+                    aliases =
+                        if (owner == null) {
+                            listOf("${names.fileFacadeFqn()}#$name")
+                        } else {
+                            emptyList()
+                        },
+                )
+            )
+        }
     }
 
-    private fun org.jetbrains.kotlin.psi.KtElement.lineNumberFromOffset(offset: Int): Int {
-        val doc = containingFile.viewProvider.document ?: return 1
-        return doc.getLineNumber(offset) + 1
+    private fun collectPropertySymbols(file: KtFile): List<ResolvedSymbol> = buildList {
+        val names = KotlinSourceNames(file)
+        for (property in file.collectDescendantsOfType<KtProperty>()) {
+            val name = property.name ?: continue
+            val owner = names.classOwner(property)?.let(names::classFqn)
+            val fqn = owner?.let { "$it#$name" } ?: names.qualify(name)
+            add(
+                ResolvedSymbol(
+                    fqn = fqn,
+                    name = name,
+                    line = property.lineNumber(),
+                    column = property.columnNumber(),
+                    kind = "property",
+                    ownerFqn = owner,
+                    signature = property.typeReference?.text,
+                    aliases = names.propertyAliases(owner, property),
+                )
+            )
+        }
+    }
+
+    private fun collectVariableTypes(file: KtFile): Map<String, String> = buildMap {
+        file.collectDescendantsOfType<KtParameter>().forEach { parameter ->
+            val name = parameter.name
+            val type = parameter.typeReference?.text
+            if (name != null && type != null) {
+                put(name, type)
+            }
+        }
+        file.collectDescendantsOfType<KtProperty>().forEach { property ->
+            val name = property.name
+            val type = property.typeReference?.text
+            if (name != null && type != null) {
+                put(name, type)
+            }
+        }
+    }
+
+    private fun indexMemberReferences(
+        file: KtFile,
+        relativePath: String,
+        store: CodeIndexStore,
+        imports: Map<String, String>,
+        variableTypes: Map<String, String>,
+    ) {
+        val names = KotlinSourceNames(file, imports)
+        file
+            .collectDescendantsOfType<org.jetbrains.kotlin.psi.KtDotQualifiedExpression>()
+            .forEach { expression ->
+                val selector =
+                    expression.selectorExpression as? KtNameReferenceExpression ?: return@forEach
+                val receiver =
+                    expression.receiverExpression as? KtNameReferenceExpression ?: return@forEach
+                val receiverType = variableTypes[receiver.getReferencedName()] ?: return@forEach
+                val name = selector.getReferencedName()
+                val target = "${names.qualifyType(receiverType)}#$name"
+                val line = selector.lineNumber()
+                val column = selector.columnNumber()
+                store.put(
+                    CodeIndexKey.ref(target, relativePath, line, column),
+                    ReferenceRecord(
+                        symbolFqn = target,
+                        relativeFile = relativePath,
+                        line = line,
+                        column = column,
+                        context = "member",
+                        language = LANGUAGE,
+                        referencedName = name,
+                        qualifier = receiver.text,
+                        candidateSymbolFqns = listOf(target),
+                    ),
+                )
+            }
+    }
+
+    private fun resolveCall(
+        file: KtFile,
+        call: KtCallExpression,
+        symbols: List<ResolvedSymbol>,
+        imports: Map<String, String>,
+        variableTypes: Map<String, String>,
+    ): InvocationTarget? {
+        val names = KotlinSourceNames(file, imports)
+        val name =
+            (call.calleeExpression as? KtSimpleNameExpression)?.getReferencedName() ?: return null
+        val qualifiedParent = call.parent as? org.jetbrains.kotlin.psi.KtDotQualifiedExpression
+        val receiver = qualifiedParent?.takeIf { it.selectorExpression == call }?.receiverExpression
+        if (receiver != null) {
+            val receiverType =
+                when (receiver) {
+                    is KtNameReferenceExpression -> variableTypes[receiver.getReferencedName()]
+                    is KtCallExpression ->
+                        (receiver.calleeExpression as? KtSimpleNameExpression)?.getReferencedName()
+                    else -> receiver.text
+                }
+            if (receiverType != null) {
+                val owner = names.qualifyType(receiverType)
+                return InvocationTarget("$owner#$name", name, receiver.text)
+            }
+        }
+        val classOwner = names.classOwner(call)?.let(names::classFqn)
+        symbols
+            .firstOrNull { it.name == name && it.ownerFqn == classOwner }
+            ?.let {
+                return InvocationTarget(it.fqn, name, null)
+            }
+        symbols
+            .firstOrNull { it.name == name }
+            ?.let {
+                return InvocationTarget(it.fqn, name, null)
+            }
+        return null
+    }
+
+    private fun KtElement.lineNumber(): Int {
+        val document = containingFile.viewProvider.document ?: return 1
+        return document.getLineNumber(textRange.startOffset) + 1
+    }
+
+    private fun KtElement.columnNumber(): Int {
+        val document = containingFile.viewProvider.document ?: return 1
+        val line = document.getLineNumber(textRange.startOffset)
+        return textRange.startOffset - document.getLineStartOffset(line) + 1
     }
 
     private data class ResolvedSymbol(
         val fqn: String,
         val name: String,
         val line: Int,
+        val column: Int,
         val kind: String,
+        val ownerFqn: String? = null,
+        val signature: String? = null,
+        val arity: Int? = null,
+        val aliases: List<String> = emptyList(),
     )
+
+    private data class InvocationTarget(
+        val symbolFqn: String,
+        val name: String,
+        val qualifier: String?,
+    )
+
+    private companion object {
+        const val LANGUAGE = "kotlin"
+    }
 }
 
-private inline fun <reified T> org.jetbrains.kotlin.psi.KtElement.collectDescendantsOfType():
-    List<T> {
+private class KotlinSourceNames(
+    private val file: KtFile,
+    private val imports: Map<String, String> = emptyMap(),
+) {
+    fun qualifyType(raw: String): String {
+        val type = raw.substringBefore('<').removeSuffix("?").trim()
+        return imports[type] ?: if ('.' in type) type else qualify(type)
+    }
+
+    fun classFqn(declaration: KtClassOrObject): String {
+        val names = mutableListOf<String>()
+        var current: KtClassOrObject? = declaration
+        while (current != null) {
+            current.name?.let(names::add)
+            current = classOwner(current)
+        }
+        return qualify(names.asReversed().joinToString("."))
+    }
+
+    fun classOwner(element: KtElement): KtClassOrObject? {
+        var current = element.parent
+        while (current != null) {
+            if (current is KtClassOrObject) {
+                return current
+            }
+            current = current.parent
+        }
+        return null
+    }
+
+    fun qualify(name: String): String {
+        val pkg = file.packageFqName.asString()
+        return if (pkg.isBlank()) name else "$pkg.$name"
+    }
+
+    fun fileFacadeFqn(): String =
+        qualify(
+            file.name.substringAfterLast('/').substringAfterLast('\\').substringBeforeLast('.') +
+                "Kt"
+        )
+
+    fun propertyAliases(owner: String?, property: KtProperty): List<String> {
+        val name = property.name ?: return emptyList()
+        val accessorOwner = owner ?: fileFacadeFqn()
+        val capitalized = name.replaceFirstChar { it.uppercaseChar() }
+        return buildList {
+            add("$accessorOwner#get$capitalized")
+            if (property.isVar) {
+                add("$accessorOwner#set$capitalized")
+            }
+        }
+    }
+}
+
+private inline fun <reified T> KtElement.collectDescendantsOfType(): List<T> {
     val results = mutableListOf<T>()
     accept(
         object : org.jetbrains.kotlin.com.intellij.psi.PsiElementVisitor() {

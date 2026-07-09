@@ -8,6 +8,41 @@ import kotlin.test.assertEquals
 
 class BuildFileParserTest {
     @Test
+    fun `parses Java and XML files from source attributes`() {
+        val workspace = createTempDirectory("build-file-parser-languages-")
+        val packageDir = workspace.resolve("app")
+        packageDir.resolve("src/App.kt").toFile().apply {
+            parentFile.mkdirs()
+            writeText("class App")
+        }
+        packageDir.resolve("src/Panel.java").toFile().writeText("class Panel {}")
+        packageDir.resolve("res/layout/main.xml").toFile().apply {
+            parentFile.mkdirs()
+            writeText("<FrameLayout />")
+        }
+        packageDir
+            .resolve("BUILD.bazel")
+            .toFile()
+            .writeText(
+                """
+                android_library(
+                    name = "app",
+                    srcs = glob(["src/**/*.kt", "src/**/*.java"]),
+                    resource_files = glob(["res/**/*.xml"]),
+                )
+                """
+                    .trimIndent()
+            )
+
+        val result =
+            BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
+        assertEquals(
+            listOf("app/res/layout/main.xml", "app/src/App.kt", "app/src/Panel.java"),
+            result.paths.sorted(),
+        )
+    }
+
+    @Test
     fun `parses kt_jvm_library srcs from BUILD snippet`() {
         val workspace = Path("src/test/resources/fixtures/bazel")
         val buildFile = workspace.resolve("plugins/foo/ui/BUILD.bazel")

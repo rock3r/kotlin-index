@@ -13,9 +13,10 @@ Auto-select Gradle when no `MODULE.bazel` / `WORKSPACE` at `--project` root and
 
 1. Parse `settings.gradle.kts` / `settings.gradle` for `include(":foo", …)` and
    `include(project(":bar"))` forms
-2. Map `--gradle-module :foo:ui` to source roots:
-   - `src/main/kotlin`
-   - KMP: `src/commonMain/kotlin`, `src/jvmMain/kotlin`, `src/androidMain/kotlin`
+2. Map `--gradle-module :foo:ui` to indexable files under `src/`:
+   - Kotlin source sets (`*/kotlin/**/*.kt`)
+   - Java source sets (`*/java/**/*.java`)
+   - Android resource trees (`*/res/**/*.xml`)
 
 `.idea/modules.xml` / `*.iml` parsing is deferred; filesystem walk covers conventional layouts.
 

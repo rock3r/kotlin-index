@@ -18,7 +18,7 @@ Written to `<project>/.kotlin-index/index/<commit>/manifest.json`:
 | `topology` | `bazel-query` or `build-parse` |
 | `scope` | Bazel target label |
 | `includeDeps` | Whether dependency closure was included |
-| `sourceFileCount` | Number of `.kt` files indexed |
+| `sourceFileCount` | Number of Kotlin, Java, and XML files indexed |
 | `sourcesContentHash` | Combined SHA-256 of indexed sources |
 | `builtAt` | ISO-8601 timestamp |
 | `applications` | Application producer ids run (e.g. `selection-context`) |
@@ -37,12 +37,12 @@ Prefer these over whole-repo scans.
 **Primary path** (requires `bazel` on PATH):
 
 ```bash
-# Kotlin library targets in dependency closure
+# JVM/Android targets in dependency closure
 bazel query "filter('kt_.*library', deps(//plugins/foo/ui:ui))" --output=label
 
-# In-repo Kotlin sources only
+# In-repo Kotlin, Java, and XML sources
 bazel query "kind('source file', deps(//plugins/foo/ui:ui))" --output=label \
-  | rg '\.kt$' | rg '^//'
+  | rg '\.(kt|java|xml)$' | rg '^//'
 ```
 
 Flags:
@@ -60,8 +60,8 @@ unless `--include-tests`.
 When Bazel is unavailable (default CI path uses mock query fixtures instead):
 
 1. Parse `BUILD` / `BUILD.bazel` under the target package directory
-2. Recognize `kt_jvm_library`, `kt_android_library`, `android_library` with `.kt` in `srcs`
-3. Expand literal `srcs` entries and `glob([...])` patterns into workspace-relative paths
+2. Recognize Kotlin/Java files in `srcs` and XML in Android `resource_files`
+3. Expand literal entries and `glob([...])` patterns into workspace-relative paths
 4. Set manifest `topology` to `build-parse`
 
 When `bazel` is available but the dependency closure is incomplete (partial checkout), the CLI

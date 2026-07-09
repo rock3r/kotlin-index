@@ -1,6 +1,7 @@
 [versions]
 kotlin = "2.1.10"
 clikt = "5.0.2"
+slf4j = "1.7.30"
 serialization = "1.8.0"
 shadow = "8.3.6"
 xodus = "2.0.1"
@@ -10,6 +11,7 @@ ktfmt = "0.26.0"
 [libraries]
 kotlin-compiler-embeddable = { module = "org.jetbrains.kotlin:kotlin-compiler-embeddable", version.ref = "kotlin" }
 clikt = { module = "com.github.ajalt.clikt:clikt", version.ref = "clikt" }
+slf4j-nop = { module = "org.slf4j:slf4j-nop", version.ref = "slf4j" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 xodus-environment = { module = "org.jetbrains.xodus:xodus-environment", version.ref = "xodus" }
 

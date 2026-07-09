@@ -21,6 +21,11 @@ data class SymbolRecord(
     val line: Int,
     val kind: String,
     val name: String,
+    val language: String = "unknown",
+    val ownerFqn: String? = null,
+    val signature: String? = null,
+    val arity: Int? = null,
+    val aliases: List<String> = emptyList(),
 ) : CodeIndexRecord
 
 @Serializable
@@ -31,6 +36,11 @@ data class ReferenceRecord(
     val line: Int,
     val column: Int,
     val context: String = "call",
+    val language: String = "unknown",
+    val referencedName: String = symbolFqn.substringAfterLast('#').substringAfterLast('.'),
+    val qualifier: String? = null,
+    val candidateSymbolFqns: List<String> = listOf(symbolFqn),
+    val arity: Int? = null,
 ) : CodeIndexRecord
 
 @Serializable

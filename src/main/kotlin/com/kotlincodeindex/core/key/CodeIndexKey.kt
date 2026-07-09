@@ -22,8 +22,21 @@ value class CodeIndexKey(val value: String) {
 
         fun sym(fqn: String): CodeIndexKey = CodeIndexKey("sym:$fqn")
 
+        fun symbolDefinition(
+            fqn: String,
+            relativeFile: String,
+            line: Int,
+            column: Int,
+        ): CodeIndexKey = CodeIndexKey("sym:$fqn:$relativeFile:$line:$column")
+
         fun ref(symbolFqn: String, relativeFile: String, line: Int): CodeIndexKey =
             CodeIndexKey("ref:$symbolFqn:$relativeFile:$line")
+
+        fun ref(symbolFqn: String, relativeFile: String, line: Int, column: Int): CodeIndexKey =
+            CodeIndexKey("ref:$symbolFqn:$relativeFile:$line:$column")
+
+        fun resource(type: String, name: String, relativeFile: String, line: Int): CodeIndexKey =
+            CodeIndexKey("res:$type:$name:$relativeFile:$line")
 
         fun file(relativeFile: String, contentHash: String): CodeIndexKey =
             CodeIndexKey("file:$relativeFile:$contentHash")

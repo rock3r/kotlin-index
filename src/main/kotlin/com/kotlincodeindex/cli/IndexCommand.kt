@@ -18,6 +18,8 @@ import com.kotlincodeindex.core.xodus.XodusCodeIndexStore
 import com.kotlincodeindex.producer.FileHashProducer
 import com.kotlincodeindex.producer.IndexBuildContext
 import com.kotlincodeindex.producer.ProducerRegistry
+import com.kotlincodeindex.producer.SourceChangeDetector
+import com.kotlincodeindex.producer.SourceChangeSet
 import com.kotlincodeindex.topology.BuildSystem
 import com.kotlincodeindex.topology.TopologyRequest
 import com.kotlincodeindex.topology.TopologyResolver
@@ -109,16 +111,25 @@ class IndexCommand : CliktCommand(name = "index") {
                 applications = applications,
             )
 
-        if (manifestPath.exists()) {
-            val existing = ManifestIO.read(manifestPath)
-            if (ManifestFreshness.isFresh(existing, criteria)) {
+        val existingManifest = manifestPath.takeIf { it.exists() }?.let(ManifestIO::read)
+        if (existingManifest != null) {
+            if (ManifestFreshness.isFresh(existingManifest, criteria)) {
                 progress("index fresh for $scope @ $commit — skip rebuild")
                 return CliExitCodes.SUCCESS
             }
         }
+        val forceFullRebuild =
+            existingManifest == null || existingManifest.indexerVersion != Version.NAME
 
         val store = XodusCodeIndexStore.open(resolver.resolveBaseStore(commit))
         try {
+            val detectedChanges = SourceChangeDetector.detect(store, project, sourceFiles)
+            val changes =
+                if (forceFullRebuild) {
+                    SourceChangeSet(sourceFiles.toSet(), detectedChanges.deletedFiles)
+                } else {
+                    detectedChanges
+                }
             val context =
                 IndexBuildContext(
                     store = store,
@@ -127,6 +138,8 @@ class IndexCommand : CliktCommand(name = "index") {
                     sourceFiles = sourceFiles,
                     workspaceRoot = project,
                     progress = progress,
+                    changedSourceFiles = changes.changedFiles,
+                    deletedSourceFiles = changes.deletedFiles,
                 )
             for (producer in ProducerRegistry.forApplications(applications)) {
                 progress(producer.displayName)
