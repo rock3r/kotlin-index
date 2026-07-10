@@ -331,11 +331,13 @@ class KotlinPsiSymbolProducer : IndexProducer {
             return InvocationTarget("$owner#$name", name, receiver.text)
         }
         val classOwner = names.classOwner(call)?.let(names::classFqn)
-        symbols
-            .firstOrNull { it.name == name && it.ownerFqn == classOwner }
-            ?.let {
-                return InvocationTarget(it.fqn, name, null)
-            }
+        if (classOwner != null) {
+            symbols
+                .firstOrNull { it.name == name && it.ownerFqn == classOwner }
+                ?.let {
+                    return InvocationTarget(it.fqn, name, null)
+                }
+        }
         val inheritedTarget = names.superClassFqn(call)?.let { "$it#$name" }
         if (
             inheritedTarget != null &&
@@ -343,11 +345,10 @@ class KotlinPsiSymbolProducer : IndexProducer {
         ) {
             return InvocationTarget(inheritedTarget, name, null)
         }
-        symbols
-            .firstOrNull { it.name == name && it.ownerFqn == null }
-            ?.let {
-                return InvocationTarget(it.fqn, name, null)
-            }
+        val topLevelTarget = names.qualify(name)
+        if (symbols.any { it.fqn == topLevelTarget } || store.hasSymbol(topLevelTarget)) {
+            return InvocationTarget(topLevelTarget, name, null)
+        }
         imports[name]?.let { imported ->
             val memberId =
                 "${imported.substringBeforeLast('.')}#${imported.substringAfterLast('.')}"

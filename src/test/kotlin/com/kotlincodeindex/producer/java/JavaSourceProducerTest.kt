@@ -295,6 +295,50 @@ class JavaSourceProducerTest {
     }
 
     @Test
+    fun `Java inherited fallback verifies members and infers var initializers`() {
+        val source =
+            """
+            package sample;
+            class Renderer { void render() {} }
+            class Base { void inherited() {} }
+            class Child extends Base {
+                void call() {
+                    inherited();
+                    unrelated();
+                    var renderer = new Renderer();
+                    renderer.render();
+                }
+            }
+            """
+                .trimIndent()
+
+        withStore { store ->
+            val producer = assertNotNull(ProducerRegistry.get("java-source"))
+            producer.produce(
+                IndexBuildContext.forInlineSources(
+                    store = store,
+                    commitHash = "abc",
+                    sourceFiles = mapOf("Child.java" to source),
+                )
+            )
+
+            val references =
+                store
+                    .prefixScan("ref:")
+                    .map { it.second }
+                    .filterIsInstance<ReferenceRecord>()
+                    .toList()
+            assertTrue(references.any { it.symbolFqn == "sample.Base#inherited" })
+            assertTrue(references.none { it.symbolFqn == "sample.Base#unrelated" })
+            assertTrue(
+                references.any { it.symbolFqn == "sample.Renderer#render" },
+                references.joinToString("\n"),
+            )
+            assertTrue(references.none { it.symbolFqn == "sample.var#render" })
+        }
+    }
+
+    @Test
     fun `anonymous Java members use an anonymous owner`() {
         val source =
             """

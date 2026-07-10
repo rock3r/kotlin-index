@@ -147,10 +147,42 @@ class CrossLanguageReferenceTest {
                     .map { it.second }
                     .filterIsInstance<ReferenceRecord>()
                     .toList()
-            assertTrue(refs.any { it.symbolFqn == "sample.KotlinBase#inheritedKotlin" })
+            assertTrue(
+                refs.any {
+                    "sample.KotlinBase#inheritedKotlin" in it.candidateSymbolFqns &&
+                        it.relativeFile.endsWith("JavaHierarchy.java")
+                }
+            )
             assertTrue(refs.any { it.symbolFqn == "sample.JavaBase#inheritedJava" })
-            assertTrue(refs.none { it.symbolFqn == "sample.JavaChild#inheritedKotlin" })
+            assertTrue(refs.none { it.symbolFqn == "sample.KotlinBase#inheritedKotlin" })
             assertTrue(refs.none { it.symbolFqn == "sample.KotlinChild#inheritedJava" })
+        } finally {
+            store.close()
+        }
+    }
+
+    @Test
+    fun `unqualified top level calls stay in the caller package`() {
+        val sources =
+            mapOf(
+                "src/main/kotlin/alpha/Render.kt" to "package alpha\nfun render() {}",
+                "src/main/kotlin/beta/Render.kt" to
+                    "package beta\nfun render() {}\nfun call() { render() }",
+            )
+        val store =
+            XodusCodeIndexStore.open(createTempDirectory("package-scoped-calls-").resolve("index"))
+        try {
+            val context = IndexBuildContext.forInlineSources(store, "abc", sources)
+            ProducerRegistry.forApplications(emptyList()).forEach { it.produce(context, store) }
+
+            val refs =
+                store
+                    .prefixScan("ref:")
+                    .map { it.second }
+                    .filterIsInstance<ReferenceRecord>()
+                    .toList()
+            assertTrue(refs.any { it.symbolFqn == "beta.render" }, refs.joinToString("\n"))
+            assertTrue(refs.none { it.symbolFqn == "alpha.render" })
         } finally {
             store.close()
         }

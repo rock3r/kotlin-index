@@ -198,7 +198,14 @@ class JavaSourceProducer : IndexProducer {
         }
 
         override fun visitVariable(node: VariableTree, data: Unit?) {
-            node.type?.toString()?.let { type ->
+            val declaredType = node.type?.toString()
+            val resolvedType =
+                if (declaredType.isNullOrBlank() || declaredType == "var") {
+                    (node.initializer as? NewClassTree)?.identifier?.toString()
+                } else {
+                    declaredType
+                }
+            resolvedType?.let { type ->
                 variableScopes.lastOrNull()?.put(node.name.toString(), type)
             }
             if (currentPath.parentPath?.leaf is ClassTree) {
@@ -289,13 +296,21 @@ class JavaSourceProducer : IndexProducer {
                                 null,
                                 staticWildcardImports,
                             )
-                        else ->
-                            invocationTarget(
+                        else -> {
+                            val superOwner =
                                 classSuperTypes.lastOrNull()?.takeIf(String::isNotBlank)
-                                    ?: classOwner,
-                                name,
-                                null,
-                            )
+                            val inheritedTarget = superOwner?.let { "$it#$name" }
+                            if (inheritedTarget != null && store.hasSymbol(inheritedTarget)) {
+                                invocationTarget(superOwner, name, null)
+                            } else {
+                                invocationTarget(
+                                    classOwner,
+                                    name,
+                                    null,
+                                    listOfNotNull(classOwner, superOwner),
+                                )
+                            }
+                        }
                     }
                 }
                 is MemberSelectTree -> {
@@ -452,6 +467,9 @@ class JavaSourceProducer : IndexProducer {
         const val LANGUAGE = "java"
     }
 }
+
+private fun CodeIndexStore.hasSymbol(fqn: String): Boolean =
+    prefixScan("sym:$fqn:").any { (_, record) -> record is SymbolRecord && record.fqn == fqn }
 
 private fun javaBeanPropertyName(name: String): String? {
     val stem =
