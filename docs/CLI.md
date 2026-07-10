@@ -30,10 +30,12 @@ When `--build-system auto` (default), Bazel is chosen if `MODULE.bazel` / `WORKS
 otherwise Gradle when `settings.gradle(.kts)` is present. Pass `--bazel-target` or
 `--gradle-module` for the scope.
 
-On first run, resolves `git rev-parse HEAD` in `--project`, discovers Kotlin sources via Bazel
+On first run, resolves `git rev-parse HEAD` in `--project`, discovers Kotlin, Java, and Android XML sources via Bazel
 query (with `labels(srcs, …)` fallback when `deps()` fails on partial checkouts), BUILD-file
 parse when `bazel` is unavailable, opens `<project>/.kotlin-index/index/<commit>/base.xodus`,
 runs core `FileHashProducer` plus any requested application producers, and writes `manifest.json`.
+Core producers always build Kotlin/Java symbols, cross-language references, and XML resources;
+`--applications` selects additional application facts such as `selection-context`.
 
 Progress lines (producer names and `[N/M] file` per source file) go to stderr.
 
@@ -69,6 +71,43 @@ When scope flags are omitted, freshness is checked against the scope stored in t
 
 Query with `--session-id <id>` reads base index plus session delta at
 `.kotlin-index/sessions/<id>/delta.xodus` (delta overrides base keys).
+
+### `find-symbol`
+
+Find definitions by exact short name, language-neutral ID, or alias. Results are deterministic
+JSONL rows and retain language, owner, signature, arity, and source location.
+
+```bash
+kotlin-code-index find-symbol --project /path/to/repo --name Panel
+kotlin-code-index find-symbol --project /path/to/repo --name 'sample.Panel#render' --language java
+```
+
+Optional filters: `--kind`, `--language`, `--session-id`, and `--format jsonl`.
+
+### `find-references`
+
+Find references whose resolved or candidate target matches a language-neutral symbol ID.
+
+```bash
+kotlin-code-index find-references \
+  --project /path/to/repo \
+  --symbol 'sample.Panel#render'
+```
+
+Rows include source qualifier, referenced name, arity, language, and candidate target IDs so a
+client can reconstruct cross-language edges.
+
+### `resolve-resource`
+
+Resolve Android resources by disambiguated type and name. Multiple configuration-specific
+definitions (for example `values/` and `values-night/`) are returned as separate rows.
+
+```bash
+kotlin-code-index resolve-resource \
+  --project /path/to/repo \
+  --type string \
+  --name title
+```
 
 ### `query`
 

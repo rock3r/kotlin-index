@@ -20,10 +20,14 @@ private constructor(private val environment: Environment, private val readOnly: 
     CodeIndexStore {
     companion object {
         private const val STORE_NAME = "CodeIndex"
+        private const val LOCK_TIMEOUT_MILLIS = 30_000L
 
         fun open(path: Path, readOnly: Boolean = false): XodusCodeIndexStore {
             path.parent?.createDirectories()
-            val config = EnvironmentConfig().setEnvIsReadonly(readOnly)
+            val config =
+                EnvironmentConfig()
+                    .setEnvIsReadonly(readOnly)
+                    .setLogLockTimeout(LOCK_TIMEOUT_MILLIS)
             val environment = Environments.newInstance(path.toString(), config)
             environment.executeInTransaction { txn ->
                 environment.openStore(STORE_NAME, StoreConfig.WITHOUT_DUPLICATES, txn)

@@ -8,6 +8,158 @@ import kotlin.test.assertEquals
 
 class BuildFileParserTest {
     @Test
+    fun `parses Java and XML files from source attributes`() {
+        val workspace = createTempDirectory("build-file-parser-languages-")
+        val packageDir = workspace.resolve("app")
+        packageDir.resolve("src/App.kt").toFile().apply {
+            parentFile.mkdirs()
+            writeText("class App")
+        }
+        packageDir.resolve("src/Panel.java").toFile().writeText("class Panel {}")
+        packageDir.resolve("res/layout/main.xml").toFile().apply {
+            parentFile.mkdirs()
+            writeText("<FrameLayout />")
+        }
+        packageDir
+            .resolve("BUILD.bazel")
+            .toFile()
+            .writeText(
+                """
+                android_library(
+                    name = "app",
+                    srcs = glob(["src/**/*.kt", "src/**/*.java"]),
+                    resource_files = glob(["res/**/*.xml"]),
+                )
+                """
+                    .trimIndent()
+            )
+
+        val result =
+            BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
+        assertEquals(
+            listOf("app/res/layout/main.xml", "app/src/App.kt", "app/src/Panel.java"),
+            result.paths.sorted(),
+        )
+    }
+
+    @Test
+    fun `commented resource file entries are not indexed`() {
+        val workspace = createTempDirectory("build-file-parser-commented-resources-")
+        val packageDir = workspace.resolve("app")
+        packageDir.resolve("res/layout/active.xml").toFile().apply {
+            parentFile.mkdirs()
+            writeText("<FrameLayout />")
+        }
+        packageDir
+            .resolve("BUILD.bazel")
+            .toFile()
+            .writeText(
+                """
+                android_library(
+                    name = "app",
+                    resource_files = [
+                        "res/layout/active.xml",
+                        # "res/layout/deleted.xml",
+                    ],
+                )
+                """
+                    .trimIndent()
+            )
+
+        val result =
+            BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
+        assertEquals(listOf("app/res/layout/active.xml"), result.paths)
+    }
+
+    @Test
+    fun `root BUILD resource paths remain workspace relative`() {
+        val workspace = createTempDirectory("build-file-parser-root-resources-")
+        workspace.resolve("res/layout/main.xml").toFile().apply {
+            parentFile.mkdirs()
+            writeText("<FrameLayout />")
+        }
+        workspace
+            .resolve("BUILD.bazel")
+            .toFile()
+            .writeText(
+                """
+                android_library(
+                    name = "app",
+                    resource_files = ["res/layout/main.xml"],
+                )
+                """
+                    .trimIndent()
+            )
+
+        val result = BuildFileParser.parseKotlinSources(workspace.resolve("BUILD.bazel"), workspace)
+        assertEquals(listOf("res/layout/main.xml"), result.paths)
+    }
+
+    @Test
+    fun `concatenated resource globs are indexed`() {
+        val workspace = createTempDirectory("build-file-parser-concat-resources-")
+        val packageDir = workspace.resolve("app")
+        packageDir.resolve("res/layout/main.xml").toFile().apply {
+            parentFile.mkdirs()
+            writeText("<FrameLayout />")
+        }
+        packageDir.resolve("feature_res/layout/feature.xml").toFile().apply {
+            parentFile.mkdirs()
+            writeText("<FrameLayout />")
+        }
+        packageDir
+            .resolve("BUILD.bazel")
+            .toFile()
+            .writeText(
+                """
+                android_library(
+                    name = "app",
+                    resource_files = glob(["res/**/*.xml"]) + glob(["feature_res/**/*.xml"]),
+                )
+                """
+                    .trimIndent()
+            )
+
+        val result =
+            BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
+        assertEquals(
+            listOf("app/feature_res/layout/feature.xml", "app/res/layout/main.xml"),
+            result.paths.sorted(),
+        )
+    }
+
+    @Test
+    fun `resource assignment without trailing comma stops at rule boundary`() {
+        val workspace = createTempDirectory("build-file-parser-resource-boundary-")
+        val packageDir = workspace.resolve("app")
+        packageDir.resolve("res/layout/main.xml").toFile().apply {
+            parentFile.mkdirs()
+            writeText("<FrameLayout />")
+        }
+        packageDir.resolve("other/later.xml").toFile().apply {
+            parentFile.mkdirs()
+            writeText("<ignored />")
+        }
+        packageDir
+            .resolve("BUILD.bazel")
+            .toFile()
+            .writeText(
+                """
+                android_library(
+                    name = "app",
+                    resource_files = ["res/layout/main.xml"]
+                )
+                LATER_XML = "other/later.xml"
+                """
+                    .trimIndent()
+            )
+
+        val result =
+            BuildFileParser.parseKotlinSources(packageDir.resolve("BUILD.bazel"), workspace)
+        assertEquals(listOf("app/res/layout/main.xml"), result.paths)
+    }
+
+    @Test
     fun `parses kt_jvm_library srcs from BUILD snippet`() {
         val workspace = Path("src/test/resources/fixtures/bazel")
         val buildFile = workspace.resolve("plugins/foo/ui/BUILD.bazel")

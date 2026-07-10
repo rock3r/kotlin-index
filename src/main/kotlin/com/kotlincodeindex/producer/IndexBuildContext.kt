@@ -13,6 +13,8 @@ data class IndexBuildContext(
     val workspaceRoot: Path = Path("."),
     val sourceContentOverrides: Map<String, String> = emptyMap(),
     val progress: ((String) -> Unit)? = null,
+    val changedSourceFiles: Set<String> = sourceFiles.toSet(),
+    val deletedSourceFiles: Set<String> = emptySet(),
 ) {
     fun readSource(relativePath: String): String =
         sourceContentOverrides[relativePath] ?: workspaceRoot.resolve(relativePath).readText()

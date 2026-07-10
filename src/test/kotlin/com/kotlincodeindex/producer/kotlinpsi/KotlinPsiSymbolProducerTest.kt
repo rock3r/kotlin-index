@@ -13,6 +13,35 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class KotlinPsiSymbolProducerTest {
+    @Test
+    fun `incremental callers resolve unchanged same-package declarations`() {
+        val sources =
+            mapOf(
+                "src/main/kotlin/sample/Helpers.kt" to "package sample\nfun helper() {}",
+                "src/main/kotlin/sample/Caller.kt" to "package sample\nfun call() { helper() }",
+            )
+        val producer = checkNotNull(ProducerRegistry.get("kotlin-psi-symbols"))
+        producer.produce(IndexBuildContext.forInlineSources(store, "first", sources), store)
+        producer.produce(
+            IndexBuildContext(
+                store = store,
+                commitHash = "second",
+                sourceFiles = sources.keys.toList(),
+                sourceContentOverrides = sources,
+                changedSourceFiles = setOf("src/main/kotlin/sample/Caller.kt"),
+            ),
+            store,
+        )
+
+        val references =
+            store
+                .prefixScan("ref:sample.helper:")
+                .map { it.second }
+                .filterIsInstance<ReferenceRecord>()
+                .toList()
+        assertTrue(references.any { it.relativeFile.endsWith("Caller.kt") })
+    }
+
     private lateinit var store: XodusCodeIndexStore
     private lateinit var tempDir: java.nio.file.Path
 

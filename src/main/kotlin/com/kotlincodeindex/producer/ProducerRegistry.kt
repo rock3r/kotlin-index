@@ -5,7 +5,9 @@ object ProducerRegistry {
 
     init {
         register(FileHashProducer())
+        register(com.kotlincodeindex.producer.java.JavaSourceProducer())
         register(com.kotlincodeindex.producer.kotlinpsi.KotlinPsiSymbolProducer())
+        register(com.kotlincodeindex.producer.xml.XmlResourceProducer())
         register(com.kotlincodeindex.producer.selectioncontext.SelectionContextProducer())
     }
 
@@ -18,10 +20,12 @@ object ProducerRegistry {
     fun all(): Collection<IndexProducer> = producers.values
 
     fun forApplications(applicationIds: List<String>): List<IndexProducer> = buildList {
-        add(FileHashProducer())
+        add(com.kotlincodeindex.producer.java.JavaSourceProducer())
         add(com.kotlincodeindex.producer.kotlinpsi.KotlinPsiSymbolProducer())
+        add(com.kotlincodeindex.producer.xml.XmlResourceProducer())
         for (id in applicationIds) {
-            producers[id]?.let { add(it) }
+            producers[id]?.takeUnless { it is FileHashProducer }?.let { add(it) }
         }
+        add(FileHashProducer())
     }
 }

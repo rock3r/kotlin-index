@@ -31,7 +31,7 @@
 |-------|----------------|
 | `cli/` | Clikt commands, progress, exit codes |
 | `application/` | Query plugins (`selection-context`, …) |
-| `producer/` | Index build: file hashes, PSI walks, (future) Tree-sitter |
+| `producer/` | Index build: file hashes, Kotlin PSI, JDK Java trees, secure XML/resource walks |
 | `topology/` | Resolve source file set from Bazel/Gradle scope |
 | `core/` | Keys, records, Xodus store, manifest, query service |
 
@@ -60,14 +60,19 @@ Limits: [application-selection-context.md](../.plans/application-selection-conte
 
 ## Upstream relationship
 
-Storage contracts align with in-app code-index work (epic #812, issues #814, #818). This repo is the **standalone CLI track** using Kotlin PSI for v1 producers; Tree-sitter/ASM producers follow in core roadmap.
+Storage contracts align with in-app code-index work (epic #812, issues #814–#818). This repo is
+the **standalone CLI track**. Kotlin uses embedded PSI, Java uses JDK 21 `JavacTask.parse()`, and
+XML uses JDK StAX plus Android resource-path conventions. A Tree-sitter runtime is not required
+for these languages. ASM dependency producers remain a later core milestone.
 
 ## Technology
 
 - **kotlin-compiler-embeddable** — PSI for Kotlin/Compose (Detekt-independent)
+- **JDK compiler trees** — parse-only Java declaration/reference extraction
+- **JDK StAX** — namespace-aware XML/resource extraction with DTD and external entities disabled
 - **Xodus** — embedded persistent store
 - **Clikt** — CLI
-- **Future:** Tree-sitter JVM (#815), ASM (#817)
+- **Future:** ASM dependency indexing (#817)
 
 ## Phased delivery
 
@@ -77,4 +82,5 @@ Storage contracts align with in-app code-index work (epic #812, issues #814, #81
 
 - Target-repo Gradle/Bazel plugins
 - Full type resolution across classpath
+- A generalized IntelliJ PSI host for arbitrary languages
 - IDE daemon / MCP requirement for queries

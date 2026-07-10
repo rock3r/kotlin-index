@@ -18,10 +18,13 @@ object BuildFileParser {
     private val INCLUDE_LIST = Regex("""\[\s*([\s\S]*?)]""")
     private val EXCLUDE_LIST = Regex("""exclude\s*=\s*\[([\s\S]*?)]""")
     private val SRCS_LIST_START = Regex("""srcs\s*=\s*\[""")
+    private val RESOURCE_FILES_ASSIGNMENT = Regex("""resource_files\s*=""")
+    private val INDEXABLE_EXTENSIONS = setOf("kt", "java", "xml")
 
     fun parseKotlinSources(buildFile: Path, workspaceRoot: Path): BuildParseResult {
         val packageDir = checkNotNull(buildFile.parent) { "BUILD file has no parent: $buildFile" }
         val packageRelative = workspaceRoot.relativize(packageDir).toString().replace('\\', '/')
+        val packagePrefix = packageRelative.takeIf { it.isNotBlank() }?.plus('/').orEmpty()
         val content = buildFile.readText()
         val paths = linkedSetOf<String>()
         val warnings = mutableListOf<String>()
@@ -36,27 +39,32 @@ object BuildFileParser {
                     .toMutableSet()
 
             for (pattern in spec.includes) {
-                if (!pattern.contains(".kt")) {
+                if (INDEXABLE_EXTENSIONS.none { extension -> pattern.contains(".$extension") }) {
                     continue
                 }
-                val ktMatches =
+                val sourceMatches =
                     BuildFileGlob.expandGlob(packageDir, pattern).filter {
-                        it.endsWith(".kt") && it !in excluded
+                        isIndexablePath(it) && it !in excluded
                     }
-                if (ktMatches.isEmpty()) {
-                    warnings += "BUILD glob '$pattern' under $packageRelative matched no .kt files"
+                if (sourceMatches.isEmpty()) {
+                    warnings +=
+                        "BUILD glob '$pattern' under $packageRelative matched no indexable files"
                 }
             }
 
-            included
-                .filter { it.endsWith(".kt") }
-                .forEach { relative -> paths += "$packageRelative/$relative" }
+            included.filter(::isIndexablePath).forEach { relative ->
+                paths += "$packagePrefix$relative"
+            }
         }
 
         for (literal in extractLiteralSrcs(content)) {
-            if (literal.endsWith(".kt") && !literal.contains('*')) {
-                paths += "$packageRelative/$literal"
+            if (isIndexablePath(literal) && !literal.contains('*')) {
+                paths += "$packagePrefix$literal"
             }
+        }
+
+        for (relative in extractResourceFiles(content, packageDir)) {
+            paths += "$packagePrefix$relative"
         }
 
         return BuildParseResult(paths.toList(), warnings)
@@ -155,8 +163,9 @@ object BuildFileParser {
             .toList()
 
     private fun extractQuotedPatterns(text: String): List<String> = buildList {
-        QUOTED_STRING.findAll(text).forEach { add(it.groupValues[1]) }
-        SINGLE_QUOTED_STRING.findAll(text).forEach { add(it.groupValues[1]) }
+        (QUOTED_STRING.findAll(text) + SINGLE_QUOTED_STRING.findAll(text))
+            .filterNot { BuildFileComments.isCommentedOutInBlock(text, it.range.first) }
+            .forEach { add(it.groupValues[1]) }
     }
 
     private fun extractBalancedParenBody(content: String, openParenIndex: Int): String? {
@@ -207,6 +216,47 @@ object BuildFileParser {
                     .map { it.groupValues[1] }
             }
             .toList()
+
+    private fun extractResourceFiles(content: String, packageDir: Path): List<String> = buildList {
+        RESOURCE_FILES_ASSIGNMENT.findAll(content)
+            .filterNot { BuildFileComments.isCommentedOutInBlock(content, it.range.first) }
+            .forEach { match ->
+                val valueStart = match.range.last + 1
+                val valueEnd =
+                    BuildFileSrcsParser.findSrcsValueEnd(content, valueStart) ?: content.length
+                val expression = content.substring(valueStart, valueEnd)
+                val globRanges = mutableListOf<IntRange>()
+                GLOB_CALL.findAll(expression)
+                    .filterNot {
+                        BuildFileComments.isCommentedOutInBlock(expression, it.range.first)
+                    }
+                    .forEach { globMatch ->
+                        val openParen = globMatch.range.last
+                        val endIndex = findBalancedParenEnd(expression, openParen) ?: return@forEach
+                        globRanges += globMatch.range.first..endIndex
+                        val body = expression.substring(openParen + 1, endIndex)
+                        val excluded =
+                            extractExcludePatterns(body)
+                                .flatMap { BuildFileGlob.expandGlob(packageDir, it) }
+                                .toSet()
+                        extractIncludePatterns(body)
+                            .flatMap { BuildFileGlob.expandGlob(packageDir, it) }
+                            .filter { it.endsWith(".xml") && it !in excluded }
+                            .forEach(::add)
+                    }
+                (QUOTED_STRING.findAll(expression) + SINGLE_QUOTED_STRING.findAll(expression))
+                    .filter { quoted ->
+                        globRanges.none { quoted.range.first in it } &&
+                            !BuildFileComments.isCommentedOutInBlock(expression, quoted.range.first)
+                    }
+                    .map { it.groupValues[1] }
+                    .filter { it.endsWith(".xml") }
+                    .forEach(::add)
+            }
+    }
+
+    private fun isIndexablePath(path: String): Boolean =
+        path.substringAfterLast('.', "") in INDEXABLE_EXTENSIONS
 
     private fun extractBalancedBracketBody(content: String, openBracketIndex: Int): String? {
         val endIndex = findBalancedBracketEnd(content, openBracketIndex) ?: return null

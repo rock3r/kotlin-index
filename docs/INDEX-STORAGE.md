@@ -35,13 +35,35 @@ See [kotlin-code-index-core.md](../.plans/kotlin-code-index-core.md). Skip rebui
 
 | Prefix | Owner | Purpose |
 |--------|-------|---------|
-| `sym:` | Core (future) | Symbol definitions |
-| `ref:` | Core (future) | References |
+| `sym:` | Core | Kotlin/Java symbol definitions |
+| `ref:` | Core | Kotlin/Java calls/imports and XML resource references |
+| `res:` | Core | Android XML resources by type and name |
 | `file:` | Core | Path + content hash |
 | `compose:` | selection-context | Selection site facts |
 | `meta:` | Core | Indexer metadata |
 
 All keys via `CodeIndexKey` — no ad hoc concatenation.
+
+Definitions use location-qualified keys so overloads and duplicate resource configurations do
+not overwrite one another:
+
+```text
+sym:<language-neutral-id>:<relative-file>:<line>:<column>
+ref:<target-id>:<relative-file>:<line>:<column>
+res:<type>:<name>:<relative-file>:<line>
+```
+
+`SymbolRecord.fqn` is the stable lookup identity. Types use `package.Type`; members use
+`package.Type#member`; local Android resources use `res:type:name`. References to resources from
+another package retain that namespace as `res:package:type:name` (for example,
+`res:android:color:white`) so they cannot be mistaken for same-named local resources. Callable records retain source
+signature and arity metadata while their persisted key preserves every overload.
+
+`ReferenceRecord` stores the source language, referenced name, source qualifier, call arity, and
+candidate language-neutral target IDs. This lets clients reconstruct Java-to-Kotlin and
+Kotlin-to-Java edges without requiring classpath attribution. Syntactically recoverable receiver
+types (parameters, locals, constructors, imports, and package-local types) produce the same
+`Owner#member` identity in both language producers.
 
 ## Xodus
 
@@ -53,6 +75,10 @@ xodus = "2.0.1"
 // build.gradle.kts
 implementation(libs.xodus.environment)
 ```
+
+Store opens use a bounded 30-second Xodus log-lock wait. Concurrent CLI processes therefore
+serialize briefly at the environment boundary instead of failing immediately when agent tools
+query the same base index at once.
 
 ## Default path constant
 

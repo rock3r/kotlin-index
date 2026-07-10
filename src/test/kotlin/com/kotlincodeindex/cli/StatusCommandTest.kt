@@ -46,7 +46,7 @@ class StatusCommandTest {
         assertEquals(0, exitCode)
         val text = output.toString()
         assertTrue(text.contains("\"fresh\":true"), text)
-        assertTrue(text.contains("\"sourceFileCount\":2"), text)
+        assertTrue(text.contains("\"sourceFileCount\":3"), text)
         assertTrue(text.contains("selection-context"), text)
     }
 

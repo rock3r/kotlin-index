@@ -11,6 +11,10 @@ Bazel-first (Gradle secondary), ships as a fat JAR with no target-repo build cou
 **selection-context** is the first application plugin: precomputed SelectionContainer /
 DisableSelection facts at composable call sites for Compose/Jewel UI audits.
 
+The core index also extracts Kotlin and Java declarations/references plus Android XML resources.
+Java uses the JDK compiler tree API, Kotlin uses embedded PSI, and XML uses secure JDK StAX
+parsing; no language-server or parser daemon is required.
+
 Licensed under the [Unenshittifiable License (UEL) v1.0](https://uelicense.eu/) — see
 [LICENSE](LICENSE).
 
@@ -20,13 +24,13 @@ Build the fat JAR:
 
 ```bash
 ./gradlew shadowJar
-# → build/libs/kotlin-code-index-0.1.0-SNAPSHOT-all.jar
+# → build/libs/kotlin-code-index-0.2.0-SNAPSHOT-all.jar
 ```
 
 Run via Gradle during development, or invoke the JAR directly:
 
 ```bash
-JAR=build/libs/kotlin-code-index-0.1.0-SNAPSHOT-all.jar
+JAR=build/libs/kotlin-code-index-0.2.0-SNAPSHOT-all.jar
 
 # Build or refresh the index for a Bazel target
 java -jar "$JAR" index \
@@ -40,6 +44,13 @@ java -jar "$JAR" query \
   --application selection-context \
   --preset interactive-in-sc \
   --format jsonl
+
+# Language-neutral symbol and reference lookups
+java -jar "$JAR" find-symbol --project /path/to/repo --name Panel
+java -jar "$JAR" find-references --project /path/to/repo --symbol 'sample.Panel#render'
+
+# Android XML resource lookup
+java -jar "$JAR" resolve-resource --project /path/to/repo --type string --name title
 ```
 
 Equivalent Gradle invocations:

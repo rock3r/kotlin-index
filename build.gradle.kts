@@ -14,7 +14,7 @@ plugins {
 
 group = "com.kotlincodeindex"
 
-version = "0.1.0-SNAPSHOT"
+version = "0.2.0-SNAPSHOT"
 
 kotlin { jvmToolchain(21) }
 
@@ -48,11 +48,12 @@ dependencies {
     implementation(libs.clikt)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.xodus.environment)
+    implementation(libs.slf4j.nop)
 
     testImplementation(kotlin("test"))
 }
 
-application { mainClass.set("com.kotlincodeindex.cli.MainKt") }
+application { mainClass.set("com.kotlincodeindex.cli.MainCommandKt") }
 
 tasks.shadowJar {
     archiveClassifier.set("all")
