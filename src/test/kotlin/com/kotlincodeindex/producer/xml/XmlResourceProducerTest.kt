@@ -7,6 +7,7 @@ import com.kotlincodeindex.producer.IndexBuildContext
 import com.kotlincodeindex.producer.ProducerRegistry
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -117,6 +118,7 @@ class XmlResourceProducerTest {
                         mapOf(
                             "app/res/layout/bazel_screen.xml" to "<FrameLayout />",
                             "app/feature_res/drawable/feature_icon.xml" to "<shape />",
+                            "app/src/main/java/com/example/response/layout/form.xml" to "<form />",
                         ),
                 )
             )
@@ -125,6 +127,7 @@ class XmlResourceProducerTest {
                 store.prefixScan("res:").map { it.second }.filterIsInstance<SymbolRecord>().toList()
             assertTrue(resources.any { it.fqn == "res:layout:bazel_screen" })
             assertTrue(resources.any { it.fqn == "res:drawable:feature_icon" })
+            assertFalse(resources.any { it.fqn == "res:layout:form" })
         }
     }
 
