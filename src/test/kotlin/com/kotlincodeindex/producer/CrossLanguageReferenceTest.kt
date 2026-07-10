@@ -63,15 +63,18 @@ class CrossLanguageReferenceTest {
                         "sample.JavaGreeter#getName" in it.candidateSymbolFqns
                 }
             )
-            val booleanPropertyReference = refs.first {
-                it.relativeFile.endsWith("KotlinGreeter.kt") &&
-                    it.symbolFqn == "sample.KotlinGreeter#isEnabled"
-            }
+            val booleanPropertyReference =
+                refs.reference("sample.KotlinGreeter#isEnabled", "member")
             assertTrue(
-                "sample.KotlinGreeter#setEnabled" in booleanPropertyReference.candidateSymbolFqns
+                "sample.KotlinGreeter#setEnabled" !in booleanPropertyReference.candidateSymbolFqns
             )
             assertTrue(
                 "sample.KotlinGreeter#setIsEnabled" !in booleanPropertyReference.candidateSymbolFqns
+            )
+            val booleanPropertyWrite =
+                refs.reference("sample.KotlinGreeter#isEnabled", "member-write")
+            assertTrue(
+                "sample.KotlinGreeter#setEnabled" in booleanPropertyWrite.candidateSymbolFqns
             )
 
             val symbols =
@@ -469,6 +472,8 @@ class CrossLanguageReferenceTest {
                         fun callSafe() { renderer?.render() }
                     }
                     object Util { fun render() {} }
+                    open class Base { open fun render() {} }
+                    class Child : Base() { fun callSuper() { super.render() } }
                     fun callObject() {
                         Util.render()
                         JavaUtil.render()
@@ -525,6 +530,10 @@ class CrossLanguageReferenceTest {
             assertTrue(
                 refs.any { it.symbolFqn == "sample.JavaUtil#render" && it.qualifier == "JavaUtil" }
             )
+            assertTrue(refs.any { it.symbolFqn == "sample.Base#render" && it.qualifier == "super" })
+            assertTrue(
+                refs.none { it.symbolFqn == "sample.Child#render" && it.qualifier == "super" }
+            )
             assertTrue(
                 refs.any {
                     it.symbolFqn == "sample.Holder.Renderer#render" && it.qualifier == "renderer"
@@ -571,10 +580,18 @@ class CrossLanguageReferenceTest {
                         println(greeter.title)
                         println(greeter.name)
                     }
-                    fun callKotlin(other: KotlinGreeter) { println(other.isEnabled) }
+                    fun callKotlin(other: KotlinGreeter) {
+                        println(other.isEnabled)
+                        other.isEnabled = false
+                    }
                 }
                 fun topLevelGreeting() {}
                 """
                     .trimIndent(),
         )
 }
+
+private fun List<ReferenceRecord>.reference(symbolFqn: String, context: String): ReferenceRecord =
+    first {
+        it.symbolFqn == symbolFqn && it.context == context
+    }

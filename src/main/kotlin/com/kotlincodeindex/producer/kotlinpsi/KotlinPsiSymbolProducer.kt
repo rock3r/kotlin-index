@@ -9,6 +9,8 @@ import com.kotlincodeindex.producer.IndexBuildContext
 import com.kotlincodeindex.producer.IndexProducer
 import com.kotlincodeindex.producer.SourceRecordCleanup
 import org.jetbrains.kotlin.com.intellij.psi.PsiElement
+import org.jetbrains.kotlin.lexer.KtTokens
+import org.jetbrains.kotlin.psi.KtBinaryExpression
 import org.jetbrains.kotlin.psi.KtBlockExpression
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtCatchClause
@@ -28,6 +30,7 @@ import org.jetbrains.kotlin.psi.KtQualifiedExpression
 import org.jetbrains.kotlin.psi.KtSimpleNameExpression
 import org.jetbrains.kotlin.psi.KtSuperExpression
 import org.jetbrains.kotlin.psi.KtThisExpression
+import org.jetbrains.kotlin.psi.KtUnaryExpression
 
 class KotlinPsiSymbolProducer : IndexProducer {
     override val id: String = "kotlin-psi-symbols"
@@ -258,8 +261,16 @@ class KotlinPsiSymbolProducer : IndexProducer {
                     "$owner#is$capitalized"
                 }
             val setterName = if (isBooleanStyleName) name.removePrefix("is") else capitalized
+            val isWrite = expression.isWriteAccess()
             val candidates =
-                listOf(target, "$owner#get$capitalized", booleanGetter, "$owner#set$setterName")
+                buildList {
+                        add(target)
+                        add("$owner#get$capitalized")
+                        add(booleanGetter)
+                        if (isWrite) {
+                            add("$owner#set$setterName")
+                        }
+                    }
                     .distinct()
             val line = selector.lineNumber()
             val column = selector.columnNumber()
@@ -270,7 +281,7 @@ class KotlinPsiSymbolProducer : IndexProducer {
                     relativeFile = relativePath,
                     line = line,
                     column = column,
-                    context = "member",
+                    context = if (isWrite) "member-write" else "member",
                     language = LANGUAGE,
                     referencedName = name,
                     qualifier = receiver.text,
@@ -320,8 +331,10 @@ class KotlinPsiSymbolProducer : IndexProducer {
         names: KotlinSourceNames,
     ): String? =
         when (receiver) {
-            is KtThisExpression,
-            is KtSuperExpression -> names.classOwner(call)?.let(names::classFqn)
+            is KtThisExpression -> names.classOwner(call)?.let(names::classFqn)
+            is KtSuperExpression ->
+                receiver.superTypeQualifier?.text?.let { names.qualifyType(it, call) }
+                    ?: names.superClassFqn(call)
             is KtNameReferenceExpression ->
                 resolveVariableType(receiver, receiver.getReferencedName())?.let {
                     names.qualifyType(it, call)
@@ -331,42 +344,9 @@ class KotlinPsiSymbolProducer : IndexProducer {
                     ?.getReferencedName()
                     ?.let { names.resolveCallReceiverType(receiver, it) }
                     ?.let { names.qualifyType(it, call) }
-            is KtDotQualifiedExpression -> {
-                val selfReceiver = receiver.receiverExpression
-                val field = receiver.selectorExpression as? KtNameReferenceExpression
-                when {
-                    selfReceiver is KtThisExpression && field != null ->
-                        resolveClassPropertyType(field, field.getReferencedName())?.let {
-                            names.qualifyType(it, call)
-                        }
-                    selfReceiver is KtSuperExpression -> null
-                    else -> names.qualifyType(receiver.text, call)
-                }
-            }
+            is KtDotQualifiedExpression -> names.resolveQualifiedReceiverOwner(call, receiver)
             else -> names.qualifyType(receiver.text, call)
         }
-
-    private fun resolveClassPropertyType(useSite: KtElement, name: String): String? {
-        var scope = useSite.parent
-        while (scope != null) {
-            if (scope is KtClassOrObject) {
-                val constructorType =
-                    (scope as? KtClass)
-                        ?.primaryConstructorParameters
-                        ?.firstOrNull { it.hasValOrVar() && it.name == name }
-                        ?.typeReference
-                        ?.text
-                return constructorType
-                    ?: scope.declarations
-                        .filterIsInstance<KtProperty>()
-                        .firstOrNull { it.name == name }
-                        ?.typeReference
-                        ?.text
-            }
-            scope = scope.parent
-        }
-        return null
-    }
 
     private fun resolveVariableType(useSite: KtElement, name: String): String? {
         var scope = useSite.parent
@@ -527,6 +507,50 @@ private class KotlinSourceNames(
             ?: name.takeIf { it.firstOrNull()?.isUpperCase() == true }?.let(::qualify)
     }
 
+    fun superClassFqn(useSite: KtElement): String? {
+        val owner = classOwner(useSite) ?: return null
+        val superType = owner.superTypeListEntries.firstOrNull()?.typeReference?.text ?: return null
+        return qualifyType(superType, useSite)
+    }
+
+    fun resolveQualifiedReceiverOwner(
+        useSite: KtElement,
+        receiver: KtDotQualifiedExpression,
+    ): String? {
+        val selfReceiver = receiver.receiverExpression
+        val field = receiver.selectorExpression as? KtNameReferenceExpression
+        return when {
+            selfReceiver is KtThisExpression && field != null ->
+                resolveClassPropertyType(field, field.getReferencedName())?.let {
+                    qualifyType(it, useSite)
+                }
+            selfReceiver is KtSuperExpression -> null
+            else -> qualifyType(receiver.text, useSite)
+        }
+    }
+
+    private fun resolveClassPropertyType(useSite: KtElement, name: String): String? {
+        var scope = useSite.parent
+        while (scope != null) {
+            if (scope is KtClassOrObject) {
+                val constructorType =
+                    (scope as? KtClass)
+                        ?.primaryConstructorParameters
+                        ?.firstOrNull { it.hasValOrVar() && it.name == name }
+                        ?.typeReference
+                        ?.text
+                return constructorType
+                    ?: scope.declarations
+                        .filterIsInstance<KtProperty>()
+                        .firstOrNull { it.name == name }
+                        ?.typeReference
+                        ?.text
+            }
+            scope = scope.parent
+        }
+        return null
+    }
+
     fun qualifyType(raw: String, useSite: KtElement? = null): String {
         val type = raw.substringBefore('<').removeSuffix("?").trim()
         imports[type]?.let {
@@ -626,6 +650,18 @@ private class KotlinSourceNames(
     private companion object {
         const val IS_PREFIX_LENGTH = 2
         val BOOLEAN_TYPE_NAMES = setOf("Boolean", "kotlin.Boolean")
+    }
+}
+
+private fun KtQualifiedExpression.isWriteAccess(): Boolean {
+    val container = parent
+    return when {
+        container is KtBinaryExpression && container.left == this ->
+            KtTokens.ALL_ASSIGNMENTS.contains(container.operationToken)
+        container is KtUnaryExpression && container.baseExpression == this ->
+            container.operationToken == KtTokens.PLUSPLUS ||
+                container.operationToken == KtTokens.MINUSMINUS
+        else -> false
     }
 }
 

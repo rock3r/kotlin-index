@@ -242,6 +242,55 @@ class JavaSourceProducerTest {
     }
 
     @Test
+    fun `Java catch resource and super receivers retain their declared owners`() {
+        val source =
+            """
+            package sample;
+            class First implements AutoCloseable {
+                void render() {}
+                public void close() {}
+            }
+            class Second extends RuntimeException implements AutoCloseable {
+                void render() {}
+                public void close() {}
+            }
+            class Base { void render() {} }
+            class Caller extends Base {
+                First model;
+                void call() {
+                    try (Second model = new Second()) { model.render(); }
+                    try { throw new Second(); } catch (Second model) { model.render(); }
+                    model.render();
+                    super.render();
+                }
+            }
+            """
+                .trimIndent()
+
+        withStore { store ->
+            val producer = assertNotNull(ProducerRegistry.get("java-source"))
+            producer.produce(
+                IndexBuildContext.forInlineSources(
+                    store = store,
+                    commitHash = "abc",
+                    sourceFiles = mapOf("Caller.java" to source),
+                )
+            )
+
+            val references =
+                store
+                    .prefixScan("ref:")
+                    .map { it.second }
+                    .filterIsInstance<ReferenceRecord>()
+                    .toList()
+            assertEquals(2, references.count { it.symbolFqn == "sample.Second#render" })
+            assertEquals(1, references.count { it.symbolFqn == "sample.First#render" })
+            assertEquals(1, references.count { it.symbolFqn == "sample.Base#render" })
+            assertTrue(references.none { it.symbolFqn == "sample.Caller#render" })
+        }
+    }
+
+    @Test
     fun `anonymous Java members use an anonymous owner`() {
         val source =
             """

@@ -8,6 +8,7 @@ import com.kotlincodeindex.producer.IndexBuildContext
 import com.kotlincodeindex.producer.IndexProducer
 import com.kotlincodeindex.producer.SourceRecordCleanup
 import com.sun.source.tree.BlockTree
+import com.sun.source.tree.CatchTree
 import com.sun.source.tree.ClassTree
 import com.sun.source.tree.CompilationUnitTree
 import com.sun.source.tree.EnhancedForLoopTree
@@ -20,6 +21,7 @@ import com.sun.source.tree.MethodInvocationTree
 import com.sun.source.tree.MethodTree
 import com.sun.source.tree.NewClassTree
 import com.sun.source.tree.Tree
+import com.sun.source.tree.TryTree
 import com.sun.source.tree.VariableTree
 import com.sun.source.util.JavacTask
 import com.sun.source.util.TreePathScanner
@@ -92,6 +94,7 @@ class JavaSourceProducer : IndexProducer {
         private val classMethodNames = ArrayDeque<Set<String>>()
         private val classFieldTypes = ArrayDeque<Map<String, String>>()
         private val classNestedTypes = ArrayDeque<Map<String, String>>()
+        private val classSuperTypes = ArrayDeque<String>()
         private val variableScopes = ArrayDeque<MutableMap<String, String>>()
 
         override fun visitImport(node: ImportTree, data: Unit?) {
@@ -153,11 +156,13 @@ class JavaSourceProducer : IndexProducer {
                     .toMap()
             classFieldTypes.addLast(fields)
             classNestedTypes.addLast(nestedTypes)
+            classSuperTypes.addLast(node.extendsClause?.toString()?.let(::qualifyType).orEmpty())
             variableScopes.addLast(fields.toMutableMap())
             try {
                 super.visitClass(node, data)
             } finally {
                 variableScopes.removeLast()
+                classSuperTypes.removeLast()
                 classNestedTypes.removeLast()
                 classFieldTypes.removeLast()
                 classMethodNames.removeLast()
@@ -216,7 +221,11 @@ class JavaSourceProducer : IndexProducer {
 
         override fun scan(tree: Tree?, data: Unit?) {
             val transientScope =
-                tree is ForLoopTree || tree is EnhancedForLoopTree || tree is LambdaExpressionTree
+                tree is ForLoopTree ||
+                    tree is EnhancedForLoopTree ||
+                    tree is LambdaExpressionTree ||
+                    tree is CatchTree ||
+                    tree is TryTree
             if (transientScope) {
                 variableScopes.addLast(mutableMapOf())
             }
@@ -284,8 +293,10 @@ class JavaSourceProducer : IndexProducer {
             when (receiver) {
                 is IdentifierTree -> {
                     val name = receiver.name.toString()
-                    if (name == "this" || name == "super") {
+                    if (name == "this") {
                         classOwners.lastOrNull()
+                    } else if (name == "super") {
+                        classSuperTypes.lastOrNull()?.takeIf(String::isNotBlank)
                     } else {
                         variableScopes
                             .reversed()
