@@ -1,6 +1,7 @@
 package com.kotlincodeindex.producer
 
 import java.nio.file.Path
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject

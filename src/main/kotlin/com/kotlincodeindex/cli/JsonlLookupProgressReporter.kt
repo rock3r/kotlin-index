@@ -3,6 +3,7 @@ package com.kotlincodeindex.cli
 import com.kotlincodeindex.core.record.CodeIndexRecord
 import com.kotlincodeindex.core.record.CodeIndexRecordCodec
 import com.kotlincodeindex.producer.MACHINE_PROGRESS_PROTOCOL_VERSION
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
