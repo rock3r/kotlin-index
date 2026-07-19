@@ -3,8 +3,9 @@
 ## Project Overview
 
 **kotlin-code-index** is a standalone Kotlin CLI that builds a **persistent** local code index
-(Xodus under `<workspace>/.kotlin-index/index/<commit>/`) for agent audit tools. It is Detekt-independent,
-Bazel-first (Gradle secondary), and ships as a fat JAR with no target-repo build coupling.
+(Xodus under `<workspace>/.kotlin-index/index/<commit>/`) for agent audit tools. It is
+Detekt-independent, Bazel-first (Gradle secondary), and ships as a fat compatibility JAR with no
+target-repo build coupling. A separate R8 JAR is the internal native-distribution input.
 
 **selection-context** is the **first application plugin**: precomputed SelectionContainer /
 DisableSelection facts at composable call sites for Compose/Jewel audits — replacing token-heavy
@@ -112,6 +113,8 @@ artefacts the user should copy verbatim.
 ./gradlew test          # unit tests (fixture-driven)
 ./gradlew run --args="…" # CLI during development
 ./gradlew shadowJar     # fat JAR at build/libs/*-all.jar
+./gradlew shrunkCliJar  # R8 native-packaging input at build/libs/*-shrunk.jar
+./gradlew verifyShrunkCli # full shrunk-JAR acceptance workload
 ./gradlew check         # tests (extend with lint/format when added)
 ```
 

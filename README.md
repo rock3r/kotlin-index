@@ -6,8 +6,9 @@
 
 Standalone Kotlin CLI that builds a **persistent** local code index (Xodus under
 `<workspace>/.kotlin-index/index/<commit>/`) for agent audit tools. Detekt-independent,
-Bazel-first (Gradle secondary), ships as a fat JAR with no target-repo build coupling.
-The same code is published as a thin Maven artifact for dependency-based consumers.
+Bazel-first (Gradle secondary), and ships as a fat compatibility JAR with no target-repo build
+coupling. A separate R8-shrunk JAR is the internal native-distribution input. The same code is
+published as a thin Maven artifact for dependency-based consumers.
 
 **selection-context** is the first application plugin: precomputed SelectionContainer /
 DisableSelection facts at composable call sites for Compose/Jewel UI audits.
@@ -26,6 +27,13 @@ Build the fat JAR:
 ```bash
 ./gradlew shadowJar
 # → build/libs/kotlin-code-index-0.2.0-SNAPSHOT-all.jar
+```
+
+Build and verify the internal R8 native-packaging input:
+
+```bash
+./gradlew shrunkCliJar verifyShrunkCli
+# → build/libs/kotlin-code-index-0.2.0-SNAPSHOT-shrunk.jar
 ```
 
 Run via Gradle during development, or invoke the JAR directly:
@@ -78,8 +86,9 @@ dependencies {
 }
 ```
 
-The Shadow `*-all.jar` remains the standalone distribution for direct `java -jar` use. See
-[docs/PUBLISHING.md](docs/PUBLISHING.md) for local publication verification and the release flow.
+The Shadow `*-all.jar` remains the standalone distribution for direct `java -jar` use. The
+`*-shrunk.jar` is not a Maven artifact. See [docs/PUBLISHING.md](docs/PUBLISHING.md) for local
+publication verification and the release flow.
 
 ## Docs
 

@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: UEL-1.0
 
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+import com.github.jengelman.gradle.plugins.shadow.transformers.PreserveFirstFoundResourceTransformer
 import com.vanniktech.maven.publish.JavadocJar
 import com.vanniktech.maven.publish.KotlinJvm
 import com.vanniktech.maven.publish.SourcesJar
 import dev.detekt.gradle.Detekt
 import dev.detekt.gradle.DetektCreateBaselineTask
-import java.util.jar.JarFile
-import javax.xml.parsers.DocumentBuilderFactory
+import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.tasks.Delete
-import org.w3c.dom.Element
+import org.gradle.api.tasks.testing.Test
 
 plugins {
     alias(libs.plugins.kotlin.jvm)
@@ -49,7 +50,10 @@ tasks
 
 sourceSets.main { resources.srcDir("config") }
 
-repositories { mavenCentral() }
+repositories {
+    mavenCentral()
+    google()
+}
 
 dependencies {
     implementation(libs.kotlin.compiler.embeddable)
@@ -61,17 +65,56 @@ dependencies {
     testImplementation(kotlin("test"))
 }
 
-application { mainClass.set("com.kotlincodeindex.cli.MainCommandKt") }
+val cliMainClass = "com.kotlincodeindex.cli.MainCommandKt"
 
-tasks.shadowJar {
-    archiveClassifier.set("all")
+application { mainClass.set(cliMainClass) }
+
+val mainSourceSet = sourceSets.main
+val runtimeClasspathConfiguration = configurations.runtimeClasspath
+
+fun ShadowJar.configureCliArchive(classifier: String) {
+    group = "distribution"
+    from(mainSourceSet.map { it.output })
+    configurations = listOf(runtimeClasspathConfiguration.get())
+    archiveClassifier.set(classifier)
+    manifest { attributes["Main-Class"] = cliMainClass }
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
     mergeServiceFiles()
+    exclude("META-INF/versions/*/module-info.class")
+    transform<PreserveFirstFoundResourceTransformer> {
+        include(
+            "kotlin/annotation/annotation.kotlin_builtins",
+            "kotlin/collections/collections.kotlin_builtins",
+            "kotlin/concurrent/atomics/atomics.kotlin_builtins",
+            "kotlin/coroutines/coroutines.kotlin_builtins",
+            "kotlin/internal/internal.kotlin_builtins",
+            "kotlin/kotlin.kotlin_builtins",
+            "kotlin/ranges/ranges.kotlin_builtins",
+            "kotlin/reflect/reflect.kotlin_builtins",
+        )
+    }
+    failOnDuplicateEntries = true
+    isReproducibleFileOrder = true
+    isPreserveFileTimestamps = false
 }
+
+tasks.shadowJar { configureCliArchive("all") }
+
+val shrunkCliJar by
+    tasks.registering(ShadowJar::class) {
+        description = "Build the R8-shrunk native-distribution CLI JAR"
+        configureCliArchive("shrunk")
+        minimize {
+            r8 { keepRuleFiles.from(layout.projectDirectory.file("gradle/r8/shrunk-cli.pro")) }
+        }
+    }
 
 shadow { addShadowVariantIntoJavaComponent = false }
 
 val testMavenRepository = layout.buildDirectory.dir("test-maven-repository")
 val publicationArtifactId = providers.gradleProperty("POM_ARTIFACT_ID")
+val publicationGroupId = group.toString()
+val publicationVersion = version.toString()
 
 mavenPublishing {
     publishToMavenCentral(automaticRelease = false)
@@ -123,9 +166,11 @@ val ideaHomeDir =
 
 tasks.test {
     useJUnitPlatform {
+        val excludedTags = mutableListOf("distribution", "publication")
         if (!project.hasProperty("liveTests")) {
-            excludeTags("live")
+            excludedTags += "live"
         }
+        excludeTags(*excludedTags.toTypedArray())
     }
     systemProperty("idea.home.path", ideaHomeDir.absolutePath)
     systemProperty("idea.config.path", ideaHomeDir.resolve("config").absolutePath)
@@ -133,115 +178,55 @@ tasks.test {
     systemProperty("idea.plugins.path", ideaHomeDir.resolve("plugins").absolutePath)
 }
 
-tasks.check {
-    dependsOn("detektMain", "detektTest", "ktfmtCheckMain", "ktfmtCheckScripts", "ktfmtCheckTest")
-}
+val verifyShrunkCli by
+    tasks.registering(Test::class) {
+        group = "verification"
+        description = "Exercise the complete CLI workload through the R8-shrunk JAR"
+        dependsOn(shrunkCliJar, tasks.shadowJar)
+        testClassesDirs = sourceSets.test.get().output.classesDirs
+        classpath = sourceSets.test.get().runtimeClasspath
+        inputs
+            .file(shrunkCliJar.flatMap(ShadowJar::getArchiveFile))
+            .withPropertyName("shrunkCliJar")
+        inputs
+            .file(tasks.shadowJar.flatMap(ShadowJar::getArchiveFile))
+            .withPropertyName("unshrunkCliJar")
+        useJUnitPlatform { includeTags("distribution") }
+        systemProperty(
+            "kotlinCodeIndex.shrunkJar",
+            shrunkCliJar.flatMap(ShadowJar::getArchiveFile).get().asFile.absolutePath,
+        )
+        systemProperty(
+            "kotlinCodeIndex.unshrunkJar",
+            tasks.shadowJar.flatMap(ShadowJar::getArchiveFile).get().asFile.absolutePath,
+        )
+    }
 
-val verifyMavenPublication by tasks.registering {
-    group = "verification"
-    description = "Verify the thin Maven publication and Central-required metadata"
-    dependsOn("publishAllPublicationsToTestRepository")
-
-    outputs.upToDateWhen { false }
-
-    doLast {
-        val groupId = project.group.toString()
-        val artifactId = publicationArtifactId.get()
-        val publicationVersion = project.version.toString()
-        val artifactDirectory =
+val verifyMavenPublication by
+    tasks.registering(Test::class) {
+        group = "verification"
+        description = "Verify the thin Maven publication and Central-required metadata"
+        dependsOn("publishAllPublicationsToTestRepository")
+        testClassesDirs = sourceSets.test.get().output.classesDirs
+        classpath = sourceSets.test.get().runtimeClasspath
+        inputs.dir(testMavenRepository).withPropertyName("testMavenRepository")
+        useJUnitPlatform { includeTags("publication") }
+        systemProperty(
+            "kotlinCodeIndex.publicationDirectory",
             testMavenRepository
                 .get()
-                .asFile
-                .resolve(groupId.replace('.', '/'))
-                .resolve(artifactId)
-                .resolve(publicationVersion)
-        val publishedFiles = artifactDirectory.listFiles().orEmpty().filter { it.isFile }
-
-        fun requireSingleArtifact(label: String, predicate: (String) -> Boolean) =
-            publishedFiles.filter { predicate(it.name) }.singleOrNull()
-                ?: error("Expected one $label in $artifactDirectory")
-
-        val mainJar =
-            requireSingleArtifact("thin JAR") {
-                it.endsWith(".jar") &&
-                    !it.endsWith("-sources.jar") &&
-                    !it.endsWith("-javadoc.jar") &&
-                    !it.endsWith("-all.jar")
-            }
-        val sourcesJar = requireSingleArtifact("sources JAR") { it.endsWith("-sources.jar") }
-        requireSingleArtifact("javadoc JAR") { it.endsWith("-javadoc.jar") }
-        val pomFile = requireSingleArtifact("POM") { it.endsWith(".pom") }
-        requireSingleArtifact("Gradle module metadata") { it.endsWith(".module") }
-
-        check(publishedFiles.none { it.name.endsWith("-all.jar") }) {
-            "The fat Shadow JAR must not be part of the Maven publication"
-        }
-
-        JarFile(mainJar).use { jar ->
-            check(jar.getEntry("com/kotlincodeindex/cli/MainCommandKt.class") != null) {
-                "The thin JAR is missing the kotlin-code-index CLI"
-            }
-            val forbiddenBundledEntries =
-                listOf(
-                    "com/github/ajalt/clikt/core/CliktCommand.class",
-                    "jetbrains/exodus/Environment.class",
-                    "kotlin/collections/CollectionsKt.class",
+                .dir(
+                    "${publicationGroupId.replace('.', '/')}/${publicationArtifactId.get()}/" +
+                        publicationVersion
                 )
-            val bundledDependencies = forbiddenBundledEntries.filter { jar.getEntry(it) != null }
-            check(bundledDependencies.isEmpty()) {
-                "The Maven JAR bundles dependencies and is not thin: ${bundledDependencies.joinToString()}"
-            }
-        }
-
-        JarFile(sourcesJar).use { jar ->
-            check(jar.getEntry("com/kotlincodeindex/cli/MainCommand.kt") != null) {
-                "The sources JAR is missing kotlin-code-index sources"
-            }
-        }
-
-        val documentBuilderFactory = DocumentBuilderFactory.newInstance()
-        documentBuilderFactory.setFeature(
-            "http://apache.org/xml/features/disallow-doctype-decl",
-            true,
+                .asFile
+                .absolutePath,
         )
-        documentBuilderFactory.setFeature(
-            "http://xml.org/sax/features/external-general-entities",
-            false,
-        )
-        documentBuilderFactory.setFeature(
-            "http://xml.org/sax/features/external-parameter-entities",
-            false,
-        )
-        val project = documentBuilderFactory.newDocumentBuilder().parse(pomFile).documentElement
-
-        fun directChild(parent: Element, name: String): Element? {
-            val children = parent.childNodes
-            for (index in 0 until children.length) {
-                val child = children.item(index)
-                if (child is Element && child.tagName == name) return child
-            }
-            return null
-        }
-
-        fun requireText(parent: Element, name: String): String {
-            val value = directChild(parent, name)?.textContent?.trim().orEmpty()
-            check(value.isNotEmpty()) { "Published POM is missing <$name>" }
-            return value
-        }
-
-        check(requireText(project, "groupId") == groupId)
-        check(requireText(project, "artifactId") == artifactId)
-        check(requireText(project, "version") == publicationVersion)
-        requireText(project, "name")
-        requireText(project, "description")
-        requireText(project, "url")
-        check(directChild(project, "licenses") != null) { "Published POM is missing <licenses>" }
-        check(directChild(project, "scm") != null) { "Published POM is missing <scm>" }
-        check(directChild(project, "developers") != null) {
-            "Published POM is missing <developers>"
-        }
-        check(directChild(project, "dependencies") != null) {
-            "Published POM must declare the thin JAR's runtime dependencies"
-        }
+        systemProperty("kotlinCodeIndex.publicationGroup", publicationGroupId)
+        systemProperty("kotlinCodeIndex.publicationArtifact", publicationArtifactId.get())
+        systemProperty("kotlinCodeIndex.publicationVersion", publicationVersion)
     }
+
+tasks.check {
+    dependsOn("detektMain", "detektTest", "ktfmtCheckMain", "ktfmtCheckScripts", "ktfmtCheckTest")
 }
