@@ -2,8 +2,9 @@
 
 `kotlin-code-index` publishes a thin JVM artifact to the Sonatype Central Portal with the
 [`com.vanniktech.maven.publish`](https://github.com/vanniktech/gradle-maven-publish-plugin)
-plugin. The Shadow `*-all.jar` remains the standalone CLI distribution and is deliberately
-excluded from the Maven publication.
+plugin. The Shadow `*-all.jar` remains the standalone CLI distribution and the `*-shrunk.jar`
+remains an internal native-packaging input. Both are deliberately excluded from the Maven
+publication.
 
 ## Consumer coordinates
 
@@ -42,7 +43,8 @@ The task publishes to an isolated repository under `build/test-maven-repository/
 
 - the main, sources, javadoc, POM, and Gradle module metadata artifacts exist
 - the main artifact contains kotlin-code-index classes but no bundled dependency classes
-- the Shadow `*-all.jar` is absent
+- the Shadow `*-all.jar`, R8 `*-shrunk.jar`, and optional Shadow runtime variant are absent from
+  both artifacts and publication metadata
 - the POM contains Central-required name, description, URL, license, SCM, developer, and
   dependency metadata
 

@@ -10,6 +10,18 @@
    markdown `selectable = true` when configured.
 4. Run `./gradlew test` before considering a change complete.
 
+Distribution and publication contracts use dedicated tagged test tasks and are excluded from the
+ordinary unit-test task:
+
+```bash
+./gradlew verifyShrunkCli       # manifest launch, full fixture workload, services, size ceiling
+./gradlew verifyMavenPublication # thin artifact and distribution-variant non-leakage
+```
+
+`verifyShrunkCli` runs only CLI behavior through `shrunkCliJar`; the unshrunk JAR is retained as a
+size baseline and diagnostic fallback. The fixture must exercise Kotlin, Java, Android XML, Xodus,
+selection-context, status/freshness, deterministic symbol/reference queries, and resource lookup.
+
 ## TDD Red-Green Cycle
 
 1. Write the test first.

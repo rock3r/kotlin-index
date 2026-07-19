@@ -3,8 +3,10 @@
 ## Product shape
 
 **kotlin-code-index** is a portable, **persistent** local code index shipped as a standalone fat
-CLI JAR and as a thin Maven artifact. It is not a SelectionContainer one-off —
-**selection-context** is the first **application plugin** on top of shared storage and topology.
+CLI JAR and as a thin Maven artifact. The build also produces a separate R8-shrunk CLI JAR as the
+input to native packaging; it does not replace either public artifact. It is not a
+SelectionContainer one-off — **selection-context** is the first **application plugin** on top of
+shared storage and topology.
 
 ```
 ┌──────────────────┐     ┌─────────────────────────────┐
@@ -74,7 +76,21 @@ for these languages. ASM dependency producers remain a later core milestone.
 - **JDK StAX** — namespace-aware XML/resource extraction with DTD and external entities disabled
 - **Xodus** — embedded persistent store
 - **Clikt** — CLI
+- **Shadow + R8** — reproducible standalone JARs; the shrunk variant retains manifest launch,
+  embedded PSI/Xodus reflection contracts, and merged service providers
 - **Future:** ASM dependency indexing (#817)
+
+## Distribution build outputs
+
+| Output | Purpose | Published to Maven |
+|--------|---------|--------------------|
+| `*-all.jar` | Unshrunk compatibility/debug CLI for direct `java -jar` use | No |
+| `*-shrunk.jar` | Verified native-packaging input | No |
+| ordinary JVM JAR | Thin dependency artifact with transitive runtime dependencies | Yes |
+
+`shadowJar` and `shrunkCliJar` share explicit main output, runtime classpath, manifest, service
+merge, duplicate handling, and reproducibility settings. The shrunk task adds only the checked-in
+rules under `gradle/r8/`.
 
 ## Phased delivery
 
