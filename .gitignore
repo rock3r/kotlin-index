@@ -23,7 +23,6 @@ local.properties
 
 # Worktrees
 /.worktrees
-/.cal-industries
 /.claude/worktrees/
 
 # Plans / scratch
