@@ -11,6 +11,7 @@ import kotlin.io.path.readText
  *
  *     ./gradlew run --args="smoke /path/to/intellij-community"
  */
+/** Internal to Kotlin consumers while retaining the standard JVM entry-point signature. */
 internal fun main(args: Array<String>) {
     val intellijRoot =
         when {

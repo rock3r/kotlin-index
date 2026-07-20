@@ -20,6 +20,10 @@ internal class MainCommand : CliktCommand(name = "indexino") {
     override fun run() = Unit
 }
 
+/**
+ * Internal to Kotlin consumers, but emitted as the standard public static JVM entry point. The fat
+ * and R8 JAR launch contracts are exercised by `verifyShrunkCli`.
+ */
 internal fun main(args: Array<String>) {
     MainCommand().main(args)
 }
