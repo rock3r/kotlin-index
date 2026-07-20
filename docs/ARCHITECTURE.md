@@ -94,11 +94,14 @@ for these languages. ASM dependency producers remain a later core milestone.
 |--------|---------|--------------------|
 | `*-all.jar` | Unshrunk compatibility/debug CLI for direct `java -jar` use | No |
 | `*-shrunk.jar` | Verified native-packaging input | No |
+| `native-distributions/application/indexino-cli.jar` | Metadata-normalized native/AOT application JAR | No |
 | ordinary JVM JAR | Thin dependency artifact with transitive runtime dependencies | Yes |
 
 `shadowJar` and `shrunkCliJar` share explicit main output, runtime classpath, manifest, service
 merge, duplicate handling, and reproducibility settings. The shrunk task adds only the checked-in
-rules under `gradle/r8/`.
+rules under `gradle/r8/`. `normalizedCliJar` repackages that R8 output with a deterministic
+even-second filesystem mtime. Its build cache is disabled because AOT validates that metadata, and
+Construo is configured to consume this exact normalized output.
 
 ## Phased delivery
 
