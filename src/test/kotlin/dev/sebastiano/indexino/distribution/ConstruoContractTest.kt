@@ -86,6 +86,7 @@ class ConstruoContractTest {
         val result = runGradle("assertConstruoContract")
 
         assertTrue(result.task(":syntheticPackage")?.outcome == TaskOutcome.SUCCESS)
+        assertTrue(result.task(":syntheticRoast")?.outcome == TaskOutcome.SUCCESS)
         assertTrue(result.task(":assertConstruoContract")?.outcome == TaskOutcome.SUCCESS)
         val entries =
             readCentralDirectory(projectDirectory.resolve("build/contract/synthetic.zip"))
@@ -144,6 +145,7 @@ class ConstruoContractTest {
             import io.github.fourlastor.construo.Target
             import io.github.fourlastor.construo.task.PackageTask
             import io.github.fourlastor.construo.task.jvm.CreateRuntimeImageTask
+            import io.github.fourlastor.construo.task.jvm.RoastTask
             import org.gradle.api.DefaultTask
             import org.gradle.api.file.RegularFileProperty
             import org.gradle.api.tasks.OutputFile
@@ -226,8 +228,22 @@ class ConstruoContractTest {
                 packageFiles.put("licenses/generated.txt", generateOverlay.flatMap { it.outputFile })
             }
 
+            val syntheticRoast = tasks.register<RoastTask>("syntheticRoast") {
+                jdkRoot.set(layout.projectDirectory.dir("package-input/runtime"))
+                appName.set("indexino")
+                mainClassName.set("sample.Main")
+                roastExe.set(layout.projectDirectory.file("package-input/indexino"))
+                roastExeName.set("indexino")
+                jarFile.set(layout.projectDirectory.file("package-input/indexino-cli.jar"))
+                runOnFirstThread.set(true)
+                vmArgs.set(emptyList())
+                useZgc.set(false)
+                useMainAsContextClassLoader.set(false)
+                output.set(layout.buildDirectory.dir("contract/roast"))
+            }
+
             tasks.register("assertConstruoContract") {
-                dependsOn(syntheticPackage)
+                dependsOn(syntheticPackage, syntheticRoast)
                 doLast {
                     val extension = project.extensions.getByType(ConstruoPluginExtension::class.java)
                     check(extension.roast.version.get() == "v1.6.0")
@@ -262,6 +278,14 @@ class ConstruoContractTest {
                         PackageTask::class.java.getMethod("getArchiveFile")
                             .getAnnotation(OutputFile::class.java) != null
                     )
+                    val stagedJar =
+                        syntheticRoast.get().output.file("indexino-cli.jar").get().asFile
+                    val sourceJar =
+                        layout.projectDirectory.file("package-input/indexino-cli.jar").asFile
+                    check(stagedJar.lastModified() == sourceJar.lastModified()) {
+                        "RoastTask changed the application JAR mtime from " +
+                            "${'$'}{sourceJar.lastModified()} to ${'$'}{stagedJar.lastModified()}"
+                    }
 
                 }
             }
