@@ -123,6 +123,7 @@ artefacts the user should copy verbatim.
 ./gradlew shadowJar     # fat JAR at build/libs/*-all.jar
 ./gradlew shrunkCliJar  # R8 native-packaging input at build/libs/*-shrunk.jar
 ./gradlew verifyShrunkCli # full shrunk-JAR acceptance workload
+./gradlew verifyConstruoContract # released native-packaging contract and immutable pins
 ./gradlew check         # tests (extend with lint/format when added)
 ```
 

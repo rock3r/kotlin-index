@@ -8,6 +8,7 @@ xodus = "2.0.1"
 detekt = "2.0.0-alpha.2"
 ktfmt = "0.26.0"
 mavenPublish = "0.36.0"
+construo = "2.2.1"
 
 [libraries]
 kotlin-compiler-embeddable = { module = "org.jetbrains.kotlin:kotlin-compiler-embeddable", version.ref = "kotlin" }
@@ -23,3 +24,4 @@ shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
 detekt = { id = "dev.detekt", version.ref = "detekt" }
 ktfmt = { id = "com.ncorti.ktfmt.gradle", version.ref = "ktfmt" }
 maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "mavenPublish" }
+construo = { id = "io.github.fourlastor.construo", version.ref = "construo" }

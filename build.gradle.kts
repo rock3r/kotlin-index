@@ -7,6 +7,7 @@ import com.vanniktech.maven.publish.KotlinJvm
 import com.vanniktech.maven.publish.SourcesJar
 import dev.detekt.gradle.Detekt
 import dev.detekt.gradle.DetektCreateBaselineTask
+import dev.sebastiano.indexino.buildlogic.NormalizedJar
 import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.tasks.Delete
 import org.gradle.api.tasks.testing.Test
@@ -19,6 +20,7 @@ plugins {
     alias(libs.plugins.detekt)
     alias(libs.plugins.ktfmt)
     alias(libs.plugins.maven.publish)
+    alias(libs.plugins.construo)
 }
 
 group = providers.gradleProperty("GROUP").get()
@@ -67,6 +69,7 @@ dependencies {
     implementation(libs.slf4j.nop)
 
     testImplementation(kotlin("test"))
+    testImplementation(gradleTestKit())
 }
 
 val cliMainClass = "dev.sebastiano.indexino.cli.MainCommandKt"
@@ -112,6 +115,25 @@ val shrunkCliJar by
             r8 { keepRuleFiles.from(layout.projectDirectory.file("gradle/r8/shrunk-cli.pro")) }
         }
     }
+
+val normalizedCliJarTimestampMillis = 1_700_000_000_000L
+
+val normalizedCliJar by
+    tasks.registering(NormalizedJar::class) {
+        description = "Build the metadata-normalized application JAR used by native distributions"
+        from(shrunkCliJar.flatMap(ShadowJar::getArchiveFile).map(::zipTree)) {
+            exclude("META-INF/MANIFEST.MF")
+        }
+        archiveFileName.set("indexino-cli.jar")
+        destinationDirectory.set(layout.buildDirectory.dir("native-distributions/application"))
+        manifest { attributes["Main-Class"] = cliMainClass }
+        isReproducibleFileOrder = true
+        isPreserveFileTimestamps = false
+        normalizedTimestampMillis.set(normalizedCliJarTimestampMillis)
+        outputs.cacheIf("filesystem mtime is part of the AOT input contract") { false }
+    }
+
+construo { jarTask.set(normalizedCliJar.map { it.name }) }
 
 shadow { addShadowVariantIntoJavaComponent = false }
 
@@ -170,7 +192,7 @@ val ideaHomeDir =
 
 tasks.test {
     useJUnitPlatform {
-        val excludedTags = mutableListOf("distribution", "publication")
+        val excludedTags = mutableListOf("construo-contract", "distribution", "publication")
         if (!project.hasProperty("liveTests")) {
             excludedTags += "live"
         }
@@ -203,6 +225,33 @@ val verifyShrunkCli by
         systemProperty(
             "indexino.unshrunkJar",
             tasks.shadowJar.flatMap(ShadowJar::getArchiveFile).get().asFile.absolutePath,
+        )
+    }
+
+val nativeDistributionPinsFile =
+    layout.projectDirectory.file("gradle/native-distributions.properties")
+
+val verifyConstruoContract by
+    tasks.registering(Test::class) {
+        group = "verification"
+        description =
+            "Verify the released Construo API and archive contract used by native distributions"
+        testClassesDirs = sourceSets.test.get().output.classesDirs
+        classpath = sourceSets.test.get().runtimeClasspath
+        dependsOn(normalizedCliJar)
+        inputs.file(nativeDistributionPinsFile).withPropertyName("nativeDistributionPins")
+        inputs
+            .file(normalizedCliJar.flatMap(NormalizedJar::getArchiveFile))
+            .withPropertyName("normalizedCliJar")
+        useJUnitPlatform { includeTags("construo-contract") }
+        systemProperty("indexino.construoVersion", libs.versions.construo.get())
+        systemProperty(
+            "indexino.nativeDistributionPins",
+            nativeDistributionPinsFile.asFile.absolutePath,
+        )
+        systemProperty(
+            "indexino.normalizedCliJar",
+            normalizedCliJar.flatMap(NormalizedJar::getArchiveFile).get().asFile.absolutePath,
         )
     }
 

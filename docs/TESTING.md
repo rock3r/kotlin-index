@@ -16,6 +16,7 @@ ordinary unit-test task:
 ```bash
 ./gradlew verifyShrunkCli       # manifest launch, full fixture workload, services, size ceiling
 ./gradlew verifyMavenPublication # thin artifact and distribution-variant non-leakage
+./gradlew verifyConstruoContract # released native-packaging API, checksums, modes, normalized JAR
 ```
 
 Kotlin ABI validation is part of `./gradlew check`. Until the first embedded API is defined,
@@ -32,6 +33,11 @@ as an automatic CI repair.
 `verifyShrunkCli` runs only CLI behavior through `shrunkCliJar`; the unshrunk JAR is retained as a
 size baseline and diagnostic fallback. The fixture must exercise Kotlin, Java, Android XML, Xodus,
 selection-context, status/freshness, deterministic symbol/reference queries, and resource lookup.
+
+`verifyConstruoContract` runs a Gradle TestKit consumer against the pinned Construo release. It
+checks provider-inferred overlays and preparation tasks, per-target archive outputs and target-JDK
+tool selection, raw macOS layout, Windows console options, checksum rejection, Unix ZIP modes, and
+the deterministic metadata of the non-cacheable normalized application JAR.
 
 ## TDD Red-Green Cycle
 
