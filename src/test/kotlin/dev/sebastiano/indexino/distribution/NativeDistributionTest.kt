@@ -89,7 +89,7 @@ class NativeDistributionTest {
         }
 
         if (target != WINDOWS_X64) {
-            val entries = readCentralDirectory(archive).associateBy(ZipEntryMetadata::name)
+            val entries = readZipCentralDirectory(archive).associateBy(ZipEntryMetadata::name)
             assertEquals(POSIX_EXECUTABLE_MODE, entries.getValue(launcherEntry(target)).unixMode)
             assertEquals(POSIX_DIRECTORY_MODE, entries.getValue("indexino/runtime/").unixMode)
             assertEquals(
@@ -696,52 +696,6 @@ class NativeDistributionTest {
         }
     }
 
-    private fun readCentralDirectory(archive: Path): List<ZipEntryMetadata> {
-        val bytes = Files.readAllBytes(archive)
-        val entries = mutableListOf<ZipEntryMetadata>()
-        val endOfCentralDirectory = findEndOfCentralDirectory(bytes)
-        val entryCount = littleEndianShort(bytes, endOfCentralDirectory + 10)
-        val centralDirectorySize = littleEndianInt(bytes, endOfCentralDirectory + 12)
-        var offset = littleEndianInt(bytes, endOfCentralDirectory + 16)
-        val centralDirectoryEnd = offset + centralDirectorySize
-        repeat(entryCount) {
-            assertEquals(CENTRAL_DIRECTORY_SIGNATURE, littleEndianInt(bytes, offset))
-            val nameLength = littleEndianShort(bytes, offset + 28)
-            val extraLength = littleEndianShort(bytes, offset + 30)
-            val commentLength = littleEndianShort(bytes, offset + 32)
-            val externalAttributes = littleEndianInt(bytes, offset + 38)
-            val name =
-                String(bytes, offset + CENTRAL_DIRECTORY_HEADER_SIZE, nameLength, Charsets.UTF_8)
-            entries +=
-                ZipEntryMetadata(
-                    name = name,
-                    unixMode = externalAttributes ushr 16 and POSIX_PERMISSION_MASK,
-                )
-            offset += CENTRAL_DIRECTORY_HEADER_SIZE + nameLength + extraLength + commentLength
-        }
-        assertEquals(centralDirectoryEnd, offset)
-        return entries
-    }
-
-    private fun findEndOfCentralDirectory(bytes: ByteArray): Int {
-        val firstPossibleOffset =
-            (bytes.size - END_OF_CENTRAL_DIRECTORY_MIN_SIZE - ZIP_MAX_COMMENT_SIZE).coerceAtLeast(0)
-        for (offset in bytes.size - END_OF_CENTRAL_DIRECTORY_MIN_SIZE downTo firstPossibleOffset) {
-            if (littleEndianInt(bytes, offset) == END_OF_CENTRAL_DIRECTORY_SIGNATURE) return offset
-        }
-        error("ZIP end-of-central-directory record not found")
-    }
-
-    private fun littleEndianInt(bytes: ByteArray, offset: Int): Int =
-        bytes[offset].toInt() and
-            0xff or
-            ((bytes[offset + 1].toInt() and 0xff) shl 8) or
-            ((bytes[offset + 2].toInt() and 0xff) shl 16) or
-            ((bytes[offset + 3].toInt() and 0xff) shl 24)
-
-    private fun littleEndianShort(bytes: ByteArray, offset: Int): Int =
-        bytes[offset].toInt() and 0xff or ((bytes[offset + 1].toInt() and 0xff) shl 8)
-
     private fun launcherEntry(target: String): String =
         "indexino/${launcherRelativePath(target).toString().replace('\\', '/')}"
 
@@ -780,8 +734,6 @@ class NativeDistributionTest {
         assertTrue(Files.isDirectory(path), "Missing directory at $path")
         return path
     }
-
-    private data class ZipEntryMetadata(val name: String, val unixMode: Int)
 
     private data class ProcessResult(val exitCode: Int, val stdout: String, val stderr: String) {
         fun diagnostic(): String = "exit=$exitCode\nstdout:\n$stdout\nstderr:\n$stderr"
@@ -869,12 +821,6 @@ class NativeDistributionTest {
         const val LINUX_X64 = "linux-x64"
         const val WINDOWS_X64 = "windows-x64"
         const val NORMALIZED_JAR_MTIME_MILLIS = 1_700_000_000_000L
-        const val CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50
-        const val CENTRAL_DIRECTORY_HEADER_SIZE = 46
-        const val END_OF_CENTRAL_DIRECTORY_SIGNATURE = 0x06054b50
-        const val END_OF_CENTRAL_DIRECTORY_MIN_SIZE = 22
-        const val ZIP_MAX_COMMENT_SIZE = 65_535
-        const val POSIX_PERMISSION_MASK = 0x1ff
         const val POSIX_EXECUTABLE_MODE = 493
         const val POSIX_DIRECTORY_MODE = 493
         const val POSIX_FILE_MODE = 420

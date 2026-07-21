@@ -27,7 +27,9 @@ class ConstruoContractTest {
     @Test
     fun `normalized application jar has deterministic archive safe metadata`() {
         val normalizedJar = Path.of(requiredProperty("indexino.normalizedCliJar"))
+        val shrunkJar = Path.of(requiredProperty("indexino.shrunkCliJar"))
         assertTrue(Files.isRegularFile(normalizedJar), "Missing normalized application JAR")
+        assertEquals(-1L, Files.mismatch(shrunkJar, normalizedJar))
         assertEquals("indexino-cli.jar", normalizedJar.fileName.toString())
         assertEquals(
             NORMALIZED_JAR_MTIME_MILLIS,
@@ -91,7 +93,7 @@ class ConstruoContractTest {
         assertTrue(result.task(":syntheticRoast")?.outcome == TaskOutcome.SUCCESS)
         assertTrue(result.task(":assertConstruoContract")?.outcome == TaskOutcome.SUCCESS)
         val entries =
-            readCentralDirectory(projectDirectory.resolve("build/contract/synthetic.zip"))
+            readZipCentralDirectory(projectDirectory.resolve("build/contract/synthetic.zip"))
                 .associateBy(ZipEntryMetadata::name)
         assertEquals(493, entries.getValue("indexino").unixMode)
         assertEquals(493, entries.getValue("runtime/").unixMode)
@@ -411,48 +413,7 @@ class ConstruoContractTest {
     private fun requiredProperty(name: String): String =
         requireNotNull(System.getProperty(name)) { "Missing $name" }
 
-    private fun readCentralDirectory(archive: Path): List<ZipEntryMetadata> {
-        val bytes = Files.readAllBytes(archive)
-        val entries = mutableListOf<ZipEntryMetadata>()
-        var offset = 0
-        while (offset <= bytes.size - CENTRAL_DIRECTORY_HEADER_SIZE) {
-            if (littleEndianInt(bytes, offset) != CENTRAL_DIRECTORY_SIGNATURE) {
-                offset++
-                continue
-            }
-            val dosTime = littleEndianShort(bytes, offset + 12)
-            val nameLength = littleEndianShort(bytes, offset + 28)
-            val extraLength = littleEndianShort(bytes, offset + 30)
-            val commentLength = littleEndianShort(bytes, offset + 32)
-            val externalAttributes = littleEndianInt(bytes, offset + 38)
-            val name =
-                String(bytes, offset + CENTRAL_DIRECTORY_HEADER_SIZE, nameLength, Charsets.UTF_8)
-            entries +=
-                ZipEntryMetadata(
-                    name = name,
-                    unixMode = externalAttributes ushr 16 and 511,
-                    dosSecond = (dosTime and 31) * 2,
-                )
-            offset += CENTRAL_DIRECTORY_HEADER_SIZE + nameLength + extraLength + commentLength
-        }
-        return entries
-    }
-
-    private fun littleEndianInt(bytes: ByteArray, offset: Int): Int =
-        bytes[offset].toInt() and
-            0xff or
-            ((bytes[offset + 1].toInt() and 0xff) shl 8) or
-            ((bytes[offset + 2].toInt() and 0xff) shl 16) or
-            ((bytes[offset + 3].toInt() and 0xff) shl 24)
-
-    private fun littleEndianShort(bytes: ByteArray, offset: Int): Int =
-        bytes[offset].toInt() and 0xff or ((bytes[offset + 1].toInt() and 0xff) shl 8)
-
-    private data class ZipEntryMetadata(val name: String, val unixMode: Int, val dosSecond: Int)
-
     private companion object {
-        const val CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50
-        const val CENTRAL_DIRECTORY_HEADER_SIZE = 46
         const val NORMALIZED_JAR_MTIME_MILLIS = 1_700_000_000_000L
         const val HEX_DIGITS = "0123456789abcdef"
         val SHA256 = Regex("[0-9a-f]{64}")
