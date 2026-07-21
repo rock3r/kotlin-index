@@ -8,9 +8,11 @@ import com.vanniktech.maven.publish.SourcesJar
 import dev.detekt.gradle.Detekt
 import dev.detekt.gradle.DetektCreateBaselineTask
 import dev.sebastiano.indexino.buildlogic.NormalizedJar
+import dev.sebastiano.indexino.buildlogic.VerifyNativeDistributionConfiguration
 import io.github.fourlastor.construo.ConstruoPluginExtension
 import io.github.fourlastor.construo.Target
 import io.github.fourlastor.construo.task.PackageTask
+import io.github.fourlastor.construo.task.jvm.CreateRuntimeImageTask
 import io.github.fourlastor.construo.task.jvm.RoastTask
 import java.util.Properties
 import org.gradle.api.file.DuplicatesStrategy
@@ -207,60 +209,90 @@ construo {
     }
 }
 
-val verifyNativeDistributionConfiguration by tasks.registering {
-    group = "verification"
-    description = "Verify the configured Tier 1 native distribution model"
-    doLast {
-        val extension = project.extensions.getByType(ConstruoPluginExtension::class.java)
-        val expectedTargets = setOf("linuxX64", "macArm64", "windowsX64")
-        check(extension.targets.names == expectedTargets) {
-            "Expected Tier 1 targets $expectedTargets, got ${extension.targets.names}"
-        }
-        check(extension.jarTask.get() == normalizedCliJar.name) {
-            "Native packaging must consume the normalized CLI JAR"
-        }
-        check(extension.zipFolder.get() == "indexino") {
-            "Native archives must use the flat indexino/ installation root"
-        }
-        check(
-            extension.jlink.modules
-                .get()
-                .containsAll(listOf("jdk.compiler", "jdk.unsupported", "jdk.crypto.ec"))
-        )
-        check(extension.roast.version.get() == nativeDistributionPin("roast.version"))
-        check(extension.roast.runOnFirstThread.get()) { "Roast must run on the first thread" }
-        check(!extension.roast.useZgc.get()) { "Short-lived CLI launchers must not enable ZGC" }
-        check("--enable-native-access=ALL-UNNAMED" in extension.roast.vmArgs.get()) {
-            "Production and future AOT training must share the native-access VM option"
-        }
+val nativeDistributionExtension = extensions.getByType(ConstruoPluginExtension::class.java)
 
-        val expectedSuffixes =
+val verifyNativeDistributionConfiguration by
+    tasks.registering(VerifyNativeDistributionConfiguration::class) {
+        group = "verification"
+        description = "Verify the configured Tier 1 native distribution model"
+        val extension = nativeDistributionExtension
+        val targetSuffixes =
             mapOf(
                 "linuxX64" to "linux-x64",
                 "macArm64" to "macos-arm64",
                 "windowsX64" to "windows-x64",
             )
-        expectedSuffixes.forEach { (targetName, suffix) ->
-            val target = extension.targets.named(targetName).get()
-            check(target.jdkUrl.get() == nativeDistributionPin("$targetName.jdkUrl"))
-            check(target.jdkSha256.get() == nativeDistributionPin("$targetName.jdkSha256"))
-            check(target.roastSha256.get() == nativeDistributionPin("$targetName.roastSha256"))
-            check(target.packagingToolJdk.get() == Target.PackagingToolJdk.TARGET_JDK)
-            check(target.archiveFile.get().asFile.name == "indexino-$version-$suffix.zip")
+        expectedValues.put("targetNames", targetSuffixes.keys.sorted().joinToString(","))
+        actualValues.put("targetNames", extension.targets.names.sorted().joinToString(","))
+        expectedValues.put("jarTask", normalizedCliJar.name)
+        actualValues.put("jarTask", extension.jarTask.get())
+        expectedValues.put("zipFolder", "indexino")
+        actualValues.put("zipFolder", extension.zipFolder.get())
+        expectedValues.put("roastVersion", nativeDistributionPin("roast.version"))
+        actualValues.put("roastVersion", extension.roast.version.get())
+        expectedValues.put("runOnFirstThread", "true")
+        actualValues.put("runOnFirstThread", extension.roast.runOnFirstThread.get().toString())
+        expectedValues.put("useZgc", "false")
+        actualValues.put("useZgc", extension.roast.useZgc.get().toString())
+        expectedValues.put("vmArgs", "--enable-native-access=ALL-UNNAMED")
+        actualValues.put("vmArgs", extension.roast.vmArgs.get().joinToString(","))
+        requiredModules.set(listOf("jdk.compiler", "jdk.unsupported", "jdk.crypto.ec"))
+        configuredModules.set(extension.jlink.modules.get())
+
+        targetSuffixes.forEach { (targetName, suffix) ->
+            val target = extension.targets.named(targetName)
             val capitalized = targetName.replaceFirstChar(Char::uppercase)
-            val packageTask = tasks.named("package$capitalized").get() as PackageTask
-            check(packageTask.archiveFile.get() == target.archiveFile.get())
-            val roastTask = tasks.named("roast$capitalized").get() as RoastTask
-            check(roastTask.jarFile.get() == normalizedCliJar.get().archiveFile.get())
+            val packageTask = tasks.named<PackageTask>("package$capitalized")
+            val roastTask = tasks.named<RoastTask>("roast$capitalized")
+            expectedValues.put("$targetName.jdkUrl", nativeDistributionPin("$targetName.jdkUrl"))
+            actualValues.put("$targetName.jdkUrl", target.get().jdkUrl.get())
+            expectedValues.put(
+                "$targetName.jdkSha256",
+                nativeDistributionPin("$targetName.jdkSha256"),
+            )
+            actualValues.put("$targetName.jdkSha256", target.get().jdkSha256.get())
+            expectedValues.put(
+                "$targetName.roastSha256",
+                nativeDistributionPin("$targetName.roastSha256"),
+            )
+            actualValues.put("$targetName.roastSha256", target.get().roastSha256.get())
+            expectedValues.put(
+                "$targetName.packagingToolJdk",
+                Target.PackagingToolJdk.TARGET_JDK.name,
+            )
+            actualValues.put(
+                "$targetName.packagingToolJdk",
+                target.get().packagingToolJdk.get().name,
+            )
+            expectedValues.put("$targetName.archiveName", "indexino-$version-$suffix.zip")
+            actualValues.put("$targetName.archiveName", target.get().archiveFile.get().asFile.name)
+            actualValues.put(
+                "$targetName.packageArchive",
+                packageTask.get().archiveFile.get().asFile.absolutePath,
+            )
+            expectedValues.put(
+                "$targetName.packageArchive",
+                target.get().archiveFile.get().asFile.absolutePath,
+            )
+            actualValues.put(
+                "$targetName.roastJar",
+                roastTask.get().jarFile.get().asFile.absolutePath,
+            )
+            expectedValues.put(
+                "$targetName.roastJar",
+                normalizedCliJar.get().archiveFile.get().asFile.absolutePath,
+            )
         }
 
-        val mac = extension.targets.named("macArm64").get() as Target.MacOs
-        val windows = extension.targets.named("windowsX64").get() as Target.Windows
-        check(!mac.appBundle.get()) { "macOS CLI distributions must use the flat raw layout" }
-        check(windows.useConsole.get()) { "Windows CLI distributions require a console launcher" }
-        check(!windows.useGpuHint.get()) { "The Windows CLI launcher must not request a GPU" }
+        val mac = extension.targets.named("macArm64", Target.MacOs::class.java)
+        val windows = extension.targets.named("windowsX64", Target.Windows::class.java)
+        expectedValues.put("macArm64.appBundle", "false")
+        actualValues.put("macArm64.appBundle", mac.get().appBundle.get().toString())
+        expectedValues.put("windowsX64.useConsole", "true")
+        actualValues.put("windowsX64.useConsole", windows.get().useConsole.get().toString())
+        expectedValues.put("windowsX64.useGpuHint", "false")
+        actualValues.put("windowsX64.useGpuHint", windows.get().useGpuHint.get().toString())
     }
-}
 
 shadow { addShadowVariantIntoJavaComponent = false }
 
@@ -393,9 +425,13 @@ fun registerNativeDistributionVerification(
         dependsOn("package$taskSuffix")
         val archive =
             layout.buildDirectory.file("distributions/indexino-$version-$artifactSuffix.zip")
-        val targetJdkRoot = layout.buildDirectory.dir("construo/jdk/$targetName")
+        val targetJdkRoot =
+            tasks.named<CreateRuntimeImageTask>("createRuntimeImage$taskSuffix").flatMap {
+                it.jdkRoot
+            }
         val executableExtension = if (targetName == "windowsX64") ".exe" else ""
         inputs.file(archive).withPropertyName("nativeArchive")
+        inputs.file(layout.projectDirectory.file("LICENSE")).withPropertyName("applicationLicense")
         inputs
             .files(
                 targetJdkRoot.map { it.file("bin/jlink$executableExtension") },
@@ -408,6 +444,10 @@ fun registerNativeDistributionVerification(
         systemProperty("indexino.nativeTarget", artifactSuffix)
         systemProperty("indexino.targetJdkRoot", targetJdkRoot.get().asFile.absolutePath)
         systemProperty("indexino.expectedJbrVersion", nativeDistributionPin("jbr.version"))
+        systemProperty(
+            "indexino.applicationLicense",
+            layout.projectDirectory.file("LICENSE").asFile.absolutePath,
+        )
     }
 
 val verifyNativeDistributionLinuxX64 =

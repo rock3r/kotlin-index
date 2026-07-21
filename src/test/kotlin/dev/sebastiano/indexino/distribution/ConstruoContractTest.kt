@@ -5,6 +5,7 @@ import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
+import java.security.MessageDigest
 import java.util.Properties
 import java.util.jar.JarFile
 import java.util.zip.ZipFile
@@ -130,10 +131,55 @@ class ConstruoContractTest {
         }
     }
 
+    @Test
+    fun `cached JBR is reverified before extraction`() {
+        val pluginVersion = requiredProperty("indexino.construoVersion")
+        val archive = "initially trusted JBR cache entry".toByteArray()
+        withArchiveServer("/jdk.tar.gz", archive) { url ->
+            writeFixture(pluginVersion, url, jdkSha256 = sha256(archive))
+            runGradle("downloadJdkLinuxX64")
+
+            val result = runGradleAndFail("verifyJdkLinuxX64")
+
+            assertTrue(result.output.contains("SHA-256 mismatch"), result.output)
+            assertFalse(
+                projectDirectory.resolve("build/construo/jdk/linuxX64.tar.gz").toFile().exists(),
+                "A warm-cache JBR mismatch must remove the untrusted archive",
+            )
+        }
+    }
+
+    @Test
+    fun `cached Roast is reverified before extraction`() {
+        val pluginVersion = requiredProperty("indexino.construoVersion")
+        val archive = "initially trusted Roast cache entry".toByteArray()
+        withArchiveServer("/roast.zip", archive) { url ->
+            writeFixture(pluginVersion, "http://127.0.0.1/unused-jdk.tar.gz", url, sha256(archive))
+            runGradle("downloadRoastLinuxX64")
+
+            val result = runGradleAndFail("verifyRoastLinuxX64")
+
+            assertTrue(result.output.contains("SHA-256 mismatch"), result.output)
+            assertFalse(
+                projectDirectory
+                    .resolve("build/construo/roast-zip/linuxX64/roast.zip")
+                    .toFile()
+                    .exists(),
+                "A warm-cache Roast mismatch must remove the untrusted archive",
+            )
+        }
+    }
+
     @Suppress(
         "LongMethod"
     ) // Keeping the TestKit build script contiguous makes its Gradle model auditable.
-    private fun writeFixture(pluginVersion: String, jdkUrl: String) {
+    private fun writeFixture(
+        pluginVersion: String,
+        jdkUrl: String,
+        roastUrl: String = "http://127.0.0.1/unused-roast.zip",
+        roastSha256: String = "1".repeat(64),
+        jdkSha256: String = "0".repeat(64),
+    ) {
         projectDirectory
             .resolve("settings.gradle.kts")
             .writeText(
@@ -149,12 +195,14 @@ class ConstruoContractTest {
                 """
             import io.github.fourlastor.construo.ConstruoPluginExtension
             import io.github.fourlastor.construo.Target
+            import io.github.fourlastor.construo.task.DownloadTask
             import io.github.fourlastor.construo.task.PackageTask
             import io.github.fourlastor.construo.task.jvm.CreateRuntimeImageTask
             import io.github.fourlastor.construo.task.jvm.RoastTask
             import org.gradle.api.DefaultTask
             import org.gradle.api.file.RegularFileProperty
             import org.gradle.api.tasks.OutputFile
+            import org.gradle.api.tasks.Internal
             import org.gradle.api.tasks.TaskAction
 
             plugins {
@@ -171,6 +219,15 @@ class ConstruoContractTest {
                         parentFile.mkdirs()
                         writeText("generated")
                     }
+                }
+            }
+
+            abstract class CorruptArchive : DefaultTask() {
+                @get:Internal abstract val archiveFile: RegularFileProperty
+
+                @TaskAction
+                fun corrupt() {
+                    archiveFile.get().asFile.writeText("corrupted warm cache entry")
                 }
             }
 
@@ -199,15 +256,17 @@ class ConstruoContractTest {
                     create<Target.Linux>("linuxX64") {
                         architecture.set(Target.Architecture.X86_64)
                         jdkUrl.set("$jdkUrl")
-                        jdkSha256.set("${"0".repeat(64)}")
-                        roastSha256.set("${"1".repeat(64)}")
+                        jdkSha256.set("$jdkSha256")
+                        roastUrl.set("$roastUrl")
+                        roastSha256.set("$roastSha256")
                         archiveFile.set(layout.buildDirectory.file("distributions/indexino-linux-x64.zip"))
                         packagingToolJdk.set(Target.PackagingToolJdk.TARGET_JDK)
                     }
                     create<Target.MacOs>("macArm64") {
                         architecture.set(Target.Architecture.AARCH64)
                         jdkUrl.set("$jdkUrl")
-                        jdkSha256.set("${"2".repeat(64)}")
+                        jdkSha256.set("$jdkSha256")
+                        roastUrl.set("$roastUrl")
                         roastSha256.set("${"3".repeat(64)}")
                         archiveFile.set(layout.buildDirectory.file("distributions/indexino-macos-arm64.zip"))
                         packagingToolJdk.set(Target.PackagingToolJdk.TARGET_JDK)
@@ -217,7 +276,8 @@ class ConstruoContractTest {
                     create<Target.Windows>("windowsX64") {
                         architecture.set(Target.Architecture.X86_64)
                         jdkUrl.set("$jdkUrl")
-                        jdkSha256.set("${"4".repeat(64)}")
+                        jdkSha256.set("$jdkSha256")
+                        roastUrl.set("$roastUrl")
                         roastSha256.set("${"5".repeat(64)}")
                         archiveFile.set(layout.buildDirectory.file("distributions/indexino-windows-x64.zip"))
                         packagingToolJdk.set(Target.PackagingToolJdk.TARGET_JDK)
@@ -226,6 +286,22 @@ class ConstruoContractTest {
                     }
                 }
             }
+
+            val corruptCachedJdk = tasks.register<CorruptArchive>("corruptCachedJdk") {
+                dependsOn("downloadJdkLinuxX64")
+                archiveFile.set(
+                    tasks.named<DownloadTask>("downloadJdkLinuxX64").flatMap { it.dest }
+                )
+            }
+            tasks.named("verifyJdkLinuxX64") { dependsOn(corruptCachedJdk) }
+
+            val corruptCachedRoast = tasks.register<CorruptArchive>("corruptCachedRoast") {
+                dependsOn("downloadRoastLinuxX64")
+                archiveFile.set(
+                    tasks.named<DownloadTask>("downloadRoastLinuxX64").flatMap { it.dest }
+                )
+            }
+            tasks.named("verifyRoastLinuxX64") { dependsOn(corruptCachedRoast) }
 
             val syntheticPackage = tasks.register<PackageTask>("syntheticPackage") {
                 from.set(layout.projectDirectory.dir("package-input"))
@@ -312,6 +388,26 @@ class ConstruoContractTest {
             .withArguments("--stacktrace", *arguments)
             .buildAndFail()
 
+    private fun withArchiveServer(path: String, archive: ByteArray, block: (String) -> Unit) {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        try {
+            server.createContext(path) { exchange ->
+                exchange.sendResponseHeaders(200, archive.size.toLong())
+                exchange.responseBody.use { it.write(archive) }
+            }
+            server.start()
+            block("http://127.0.0.1:${server.address.port}$path")
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    private fun sha256(bytes: ByteArray): String =
+        MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { byte ->
+            val value = byte.toInt() and 0xff
+            "${HEX_DIGITS[value ushr 4]}${HEX_DIGITS[value and 0x0f]}"
+        }
+
     private fun requiredProperty(name: String): String =
         requireNotNull(System.getProperty(name)) { "Missing $name" }
 
@@ -358,6 +454,7 @@ class ConstruoContractTest {
         const val CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50
         const val CENTRAL_DIRECTORY_HEADER_SIZE = 46
         const val NORMALIZED_JAR_MTIME_MILLIS = 1_700_000_000_000L
+        const val HEX_DIGITS = "0123456789abcdef"
         val SHA256 = Regex("[0-9a-f]{64}")
     }
 }

@@ -14,6 +14,7 @@ import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.io.TempDir
 
@@ -56,14 +57,34 @@ class NativeDistributionTest {
                 zip.getInputStream(entries.getValue("indexino/runtime/release"))
                     .bufferedReader()
                     .use { it.readText() }
-            REQUIRED_MODULES.forEach { module -> assertContains(release, module) }
+            val runtimeModules =
+                release
+                    .lineSequence()
+                    .first { it.startsWith("MODULES=\"") }
+                    .removePrefix("MODULES=\"")
+                    .removeSuffix("\"")
+                    .split(' ')
+                    .toSet()
+            assertTrue(
+                runtimeModules.containsAll(REQUIRED_MODULES),
+                "Missing required modules: ${REQUIRED_MODULES - runtimeModules}",
+            )
 
-            assertTrue(entries.containsKey("indexino/licenses/indexino-LICENSE"))
-            REQUIRED_MODULES.forEach { module ->
-                assertTrue(
-                    entries.containsKey("indexino/runtime/legal/$module/LICENSE"),
-                    "Missing JBR license for $module",
-                )
+            val packagedLicense = entries.getValue("indexino/licenses/indexino-LICENSE")
+            val packagedLicenseBytes = zip.getInputStream(packagedLicense).use { it.readBytes() }
+            assertTrue(
+                packagedLicenseBytes.contentEquals(
+                    Files.readAllBytes(requiredFile("indexino.applicationLicense"))
+                ),
+                "Packaged application license differs from LICENSE",
+            )
+            runtimeModules.forEach { module ->
+                REQUIRED_JBR_LEGAL_FILES.forEach { file ->
+                    assertTrue(
+                        entries.containsKey("indexino/runtime/legal/$module/$file"),
+                        "Missing JBR legal file $file for $module",
+                    )
+                }
             }
         }
 
@@ -87,7 +108,9 @@ class NativeDistributionTest {
     fun `packaging tools resolve inside the pinned target JBR`() {
         val target = requiredProperty("indexino.nativeTarget")
         val targetJdkRoot = requiredDirectory("indexino.targetJdkRoot").toRealPath()
-        val expectedVersion = requiredProperty("indexino.expectedJbrVersion").substringBefore('b')
+        val expectedJbrVersion = requiredProperty("indexino.expectedJbrVersion")
+        val expectedVersion = expectedJbrVersion.substringBefore('b')
+        val expectedBuild = expectedJbrVersion.substringAfter('b')
         val extension = if (target == WINDOWS_X64) ".exe" else ""
         mapOf("jlink" to "--version", "jdeps" to "--version", "javap" to "-version").forEach {
             (tool, versionArgument) ->
@@ -97,6 +120,13 @@ class NativeDistributionTest {
             assertEquals(0, result.exitCode, result.diagnostic())
             assertContains(result.stdout + result.stderr, expectedVersion)
         }
+        val java = targetJdkRoot.resolve("bin/java$extension").toRealPath()
+        val javaVersion = runCommand(targetJdkRoot, java.toString(), "-version")
+        assertEquals(0, javaVersion.exitCode, javaVersion.diagnostic())
+        assertContains(
+            javaVersion.stdout + javaVersion.stderr,
+            "$expectedVersion+9-b$expectedBuild",
+        )
     }
 
     @Test
@@ -130,15 +160,14 @@ class NativeDistributionTest {
         val workspace = createFixtureWorkspace()
 
         assertCompleteWorkload(launcher, caller, workspace)
+        assertCallerRelativeInvocation(launcher, caller, workspace)
 
         val relocatedParent = tempDir.resolve("relocated").createDirectories()
         val relocated = relocatedParent.resolve("indexino")
         Files.move(installation, relocated, StandardCopyOption.ATOMIC_MOVE)
         launcher = relocated.resolve(launcherRelativePath(target))
 
-        val status = runLauncher(launcher, caller, "status", "--project", workspace.toString())
-        assertEquals(0, status.exitCode, status.diagnostic())
-        assertContains(status.stdout, "selection-context")
+        assertCallerRelativeInvocation(launcher, caller, workspace)
         val query =
             runLauncher(
                 launcher,
@@ -185,7 +214,7 @@ class NativeDistributionTest {
     @Test
     fun `windows console launchers wait redirect and propagate failures`() {
         val target = requiredProperty("indexino.nativeTarget")
-        if (target != WINDOWS_X64) return
+        assumeTrue(target == WINDOWS_X64, "Windows console contract runs on Windows x64 only")
 
         val installation = extractArchive(requiredFile("indexino.nativeArchive"), target, "windows")
         val launcher = installation.resolve(launcherRelativePath(target))
@@ -198,7 +227,7 @@ class NativeDistributionTest {
                 "-NoProfile",
                 "-NonInteractive",
                 "-Command",
-                startProcessCommand(launcher, powershellOutput, powershellError, "--help"),
+                powershellInvocation(launcher, powershellOutput, powershellError, "--help"),
             )
         assertEquals(0, powershell.exitCode, powershell.diagnostic())
         assertContains(powershellOutput.readText(), "Usage: indexino")
@@ -217,6 +246,20 @@ class NativeDistributionTest {
         assertEquals(0, cmd.exitCode, cmd.diagnostic())
         assertContains(cmdOutput.readText(), "Usage: indexino")
 
+        val invalidCmdOutput = tempDir.resolve("cmd-invalid.out")
+        val invalidCmdError = tempDir.resolve("cmd-invalid.err")
+        val invalidCmd =
+            runCommand(
+                tempDir,
+                "cmd.exe",
+                "/d",
+                "/s",
+                "/c",
+                "\"${launcher}\" not-a-command 1>\"$invalidCmdOutput\" 2>\"$invalidCmdError\"",
+            )
+        assertTrue(invalidCmd.exitCode != 0, invalidCmd.diagnostic())
+        assertContains(invalidCmdError.readText(), "no such subcommand")
+
         val invalid =
             runCommand(
                 tempDir,
@@ -224,7 +267,7 @@ class NativeDistributionTest {
                 "-NoProfile",
                 "-NonInteractive",
                 "-Command",
-                startProcessCommand(
+                powershellInvocation(
                     launcher,
                     tempDir.resolve("invalid.out"),
                     tempDir.resolve("invalid.err"),
@@ -232,12 +275,13 @@ class NativeDistributionTest {
                 ),
             )
         assertTrue(invalid.exitCode != 0, invalid.diagnostic())
+        assertContains(tempDir.resolve("invalid.err").readText(), "no such subcommand")
     }
 
     @Test
     fun `windows console launcher terminates on ctrl c`() {
         val target = requiredProperty("indexino.nativeTarget")
-        if (target != WINDOWS_X64) return
+        assumeTrue(target == WINDOWS_X64, "Windows Ctrl-C contract runs on Windows x64 only")
 
         val installation = extractArchive(requiredFile("indexino.nativeArchive"), target, "ctrl-c")
         val launcher = installation.resolve(launcherRelativePath(target))
@@ -268,6 +312,21 @@ class NativeDistributionTest {
         val indexRoot = workspace.resolve(".indexino/index/$commit")
         assertTrue(Files.isDirectory(indexRoot.resolve("base.xodus")))
         assertTrue(Files.isRegularFile(indexRoot.resolve("manifest.json")))
+    }
+
+    private fun assertCallerRelativeInvocation(launcher: Path, caller: Path, workspace: Path) {
+        val relativeLauncher = caller.relativize(launcher)
+        val relativeWorkspace = caller.relativize(workspace)
+        val status =
+            runCommand(
+                caller,
+                relativeLauncher.toString(),
+                "status",
+                "--project",
+                relativeWorkspace.toString(),
+            )
+        assertEquals(0, status.exitCode, status.diagnostic())
+        assertContains(status.stdout, "selection-context")
     }
 
     private fun assertIndexLifecycle(launcher: Path, caller: Path, workspace: Path) {
@@ -492,7 +551,7 @@ class NativeDistributionTest {
 
     private fun ctrlCVerificationScript(launcher: Path, workspace: Path): String {
         val commandLine =
-            "\\\"$launcher\\\" index --project \\\"$workspace\\\" " +
+            "\"$launcher\" index --project \"$workspace\" " +
                 "--build-system gradle --gradle-module :app"
         return """
             ${'$'}ErrorActionPreference = 'Stop'
@@ -640,12 +699,13 @@ class NativeDistributionTest {
     private fun readCentralDirectory(archive: Path): List<ZipEntryMetadata> {
         val bytes = Files.readAllBytes(archive)
         val entries = mutableListOf<ZipEntryMetadata>()
-        var offset = 0
-        while (offset <= bytes.size - CENTRAL_DIRECTORY_HEADER_SIZE) {
-            if (littleEndianInt(bytes, offset) != CENTRAL_DIRECTORY_SIGNATURE) {
-                offset++
-                continue
-            }
+        val endOfCentralDirectory = findEndOfCentralDirectory(bytes)
+        val entryCount = littleEndianShort(bytes, endOfCentralDirectory + 10)
+        val centralDirectorySize = littleEndianInt(bytes, endOfCentralDirectory + 12)
+        var offset = littleEndianInt(bytes, endOfCentralDirectory + 16)
+        val centralDirectoryEnd = offset + centralDirectorySize
+        repeat(entryCount) {
+            assertEquals(CENTRAL_DIRECTORY_SIGNATURE, littleEndianInt(bytes, offset))
             val nameLength = littleEndianShort(bytes, offset + 28)
             val extraLength = littleEndianShort(bytes, offset + 30)
             val commentLength = littleEndianShort(bytes, offset + 32)
@@ -659,7 +719,17 @@ class NativeDistributionTest {
                 )
             offset += CENTRAL_DIRECTORY_HEADER_SIZE + nameLength + extraLength + commentLength
         }
+        assertEquals(centralDirectoryEnd, offset)
         return entries
+    }
+
+    private fun findEndOfCentralDirectory(bytes: ByteArray): Int {
+        val firstPossibleOffset =
+            (bytes.size - END_OF_CENTRAL_DIRECTORY_MIN_SIZE - ZIP_MAX_COMMENT_SIZE).coerceAtLeast(0)
+        for (offset in bytes.size - END_OF_CENTRAL_DIRECTORY_MIN_SIZE downTo firstPossibleOffset) {
+            if (littleEndianInt(bytes, offset) == END_OF_CENTRAL_DIRECTORY_SIGNATURE) return offset
+        }
+        error("ZIP end-of-central-directory record not found")
     }
 
     private fun littleEndianInt(bytes: ByteArray, offset: Int): Int =
@@ -684,17 +754,15 @@ class NativeDistributionTest {
     private fun runtimeJavaRelativePath(target: String): Path =
         Path.of("runtime", "bin", if (target == WINDOWS_X64) "java.exe" else "java")
 
-    private fun startProcessCommand(
+    private fun powershellInvocation(
         launcher: Path,
         stdout: Path,
         stderr: Path,
         argument: String,
     ): String =
-        "${'$'}process = Start-Process -FilePath '${powershellQuote(launcher)}' " +
-            "-ArgumentList '$argument' -Wait -PassThru " +
-            "-RedirectStandardOutput '${powershellQuote(stdout)}' " +
-            "-RedirectStandardError '${powershellQuote(stderr)}'; " +
-            "exit ${'$'}process.ExitCode"
+        "& '${powershellQuote(launcher)}' '$argument' " +
+            "1>'${powershellQuote(stdout)}' 2>'${powershellQuote(stderr)}'; " +
+            "exit ${'$'}LASTEXITCODE"
 
     private fun powershellQuote(value: Any): String = value.toString().replace("'", "''")
 
@@ -803,6 +871,9 @@ class NativeDistributionTest {
         const val NORMALIZED_JAR_MTIME_MILLIS = 1_700_000_000_000L
         const val CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50
         const val CENTRAL_DIRECTORY_HEADER_SIZE = 46
+        const val END_OF_CENTRAL_DIRECTORY_SIGNATURE = 0x06054b50
+        const val END_OF_CENTRAL_DIRECTORY_MIN_SIZE = 22
+        const val ZIP_MAX_COMMENT_SIZE = 65_535
         const val POSIX_PERMISSION_MASK = 0x1ff
         const val POSIX_EXECUTABLE_MODE = 493
         const val POSIX_DIRECTORY_MODE = 493
@@ -811,5 +882,7 @@ class NativeDistributionTest {
         const val PROCESS_KILL_TIMEOUT_SECONDS = 10L
         const val INTERRUPT_FIXTURE_FILE_COUNT = 2_000
         val REQUIRED_MODULES = setOf("jdk.compiler", "jdk.unsupported", "jdk.crypto.ec")
+        val REQUIRED_JBR_LEGAL_FILES =
+            setOf("LICENSE", "ADDITIONAL_LICENSE_INFO", "ASSEMBLY_EXCEPTION", "README.JAVASE")
     }
 }
