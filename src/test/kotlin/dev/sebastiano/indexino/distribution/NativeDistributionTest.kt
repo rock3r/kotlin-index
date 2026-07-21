@@ -571,6 +571,13 @@ class NativeDistributionTest {
             ${'$'}nativeConsoleSource = [Text.Encoding]::UTF8.GetString(
                 [Convert]::FromBase64String('$nativeConsoleBase64'))
             Add-Type -TypeDefinition ${'$'}nativeConsoleSource
+            [void][NativeConsole]::FreeConsole()
+            if (-not [NativeConsole]::AllocConsole()) {
+                throw "AllocConsole failed: ${'$'}([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
+            }
+            if (-not [NativeConsole]::SetConsoleCtrlHandler([IntPtr]::Zero, ${'$'}true)) {
+                throw 'Could not ignore CTRL_C_EVENT in the verifier process'
+            }
 
             ${'$'}startup = New-Object NativeConsole+STARTUPINFO
             ${'$'}startup.cb = [Runtime.InteropServices.Marshal]::SizeOf(${'$'}startup)
@@ -582,7 +589,7 @@ class NativeDistributionTest {
                 [IntPtr]::Zero,
                 [IntPtr]::Zero,
                 ${'$'}false,
-                0x00000010,
+                0,
                 [IntPtr]::Zero,
                 '${powershellQuote(workspace)}',
                 [ref]${'$'}startup,
@@ -597,13 +604,6 @@ class NativeDistributionTest {
                 }
                 if (${'$'}exitCode -ne 259) {
                     throw "Launcher exited before CTRL_C_EVENT with code ${'$'}exitCode"
-                }
-                [void][NativeConsole]::FreeConsole()
-                if (-not [NativeConsole]::AttachConsole(${'$'}process.dwProcessId)) {
-                    throw "AttachConsole failed: ${'$'}([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
-                }
-                if (-not [NativeConsole]::SetConsoleCtrlHandler([IntPtr]::Zero, ${'$'}true)) {
-                    throw 'Could not ignore CTRL_C_EVENT in the verifier process'
                 }
                 if (-not [NativeConsole]::GenerateConsoleCtrlEvent(0, 0)) {
                     throw "GenerateConsoleCtrlEvent failed: ${'$'}([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
@@ -623,6 +623,7 @@ class NativeDistributionTest {
                 }
                 Write-Output "CTRL_C_EVENT terminated launcher with exit code ${'$'}exitCode"
             } finally {
+                [void][NativeConsole]::FreeConsole()
                 [void][NativeConsole]::CloseHandle(${'$'}process.hThread)
                 [void][NativeConsole]::CloseHandle(${'$'}process.hProcess)
             }
@@ -820,10 +821,10 @@ class NativeDistributionTest {
                     out PROCESS_INFORMATION processInformation);
 
                 [DllImport("kernel32.dll", SetLastError = true)]
-                public static extern bool FreeConsole();
+                public static extern bool AllocConsole();
 
                 [DllImport("kernel32.dll", SetLastError = true)]
-                public static extern bool AttachConsole(UInt32 processId);
+                public static extern bool FreeConsole();
 
                 [DllImport("kernel32.dll", SetLastError = true)]
                 public static extern bool SetConsoleCtrlHandler(IntPtr handler, bool add);
