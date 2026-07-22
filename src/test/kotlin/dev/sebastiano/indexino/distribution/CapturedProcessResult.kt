@@ -77,7 +77,9 @@ private fun boundaryCommand(boundaryReady: Path, command: List<String>): List<St
 
 private fun awaitBoundaryReady(process: Process, boundaryReady: Path): Boolean {
     val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(BOUNDARY_START_TIMEOUT_SECONDS)
-    val expectedMarker = if (isWindows()) "windows-job" else "posix-process-group"
+    val expectedMarker =
+        if (isWindows()) CapturedProcessBoundary.WINDOWS_MARKER
+        else CapturedProcessBoundary.POSIX_MARKER
     while (System.nanoTime() < deadline) {
         if (hasBoundaryMarker(boundaryReady, expectedMarker)) return true
         if (!process.isAlive) return hasBoundaryMarker(boundaryReady, expectedMarker)

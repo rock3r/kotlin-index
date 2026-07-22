@@ -14,6 +14,8 @@ import java.util.List;
 /** Starts a command inside a kernel-owned process boundary used by native verification tests. */
 public final class CapturedProcessBoundary {
     public static final String ENVIRONMENT_KEY = "INDEXINO_CAPTURE_BOUNDARY";
+    public static final String POSIX_MARKER = "posix-process-group";
+    public static final String WINDOWS_MARKER = "windows-job";
 
     private static final int JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9;
     private static final int JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000;
@@ -55,13 +57,13 @@ public final class CapturedProcessBoundary {
     private static String establishBoundary() {
         if (Platform.isWindows()) {
             establishWindowsJob();
-            return "windows-job";
+            return WINDOWS_MARKER;
         }
         int sessionId = PosixLibC.INSTANCE.setsid();
         if (sessionId < 0) {
             throw new IllegalStateException("setsid failed with errno " + Native.getLastError());
         }
-        return "posix-process-group";
+        return POSIX_MARKER;
     }
 
     private static void establishWindowsJob() {

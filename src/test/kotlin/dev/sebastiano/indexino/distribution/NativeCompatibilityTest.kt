@@ -55,13 +55,15 @@ class NativeCompatibilityTest {
                     "-NoProfile",
                     "-NonInteractive",
                     "-Command",
-                    "if (${'$'}env:INDEXINO_CAPTURE_BOUNDARY -ne 'windows-job') { exit 41 }",
+                    "if (${'$'}env:INDEXINO_CAPTURE_BOUNDARY -ne " +
+                        "'${CapturedProcessBoundary.WINDOWS_MARKER}') { exit 41 }",
                 )
             } else {
                 arrayOf(
                     "/bin/sh",
                     "-c",
-                    "test \"${'$'}INDEXINO_CAPTURE_BOUNDARY\" = 'posix-process-group'",
+                    "test \"${'$'}INDEXINO_CAPTURE_BOUNDARY\" = " +
+                        "'${CapturedProcessBoundary.POSIX_MARKER}'",
                 )
             }
 
