@@ -13,6 +13,7 @@ import java.util.Properties
 import java.util.jar.JarFile
 import java.util.zip.ZipFile
 import kotlin.io.path.createDirectories
+import kotlin.io.path.readText
 import kotlin.io.path.writeText
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -26,6 +27,22 @@ import org.junit.jupiter.api.io.TempDir
 @Tag("construo-contract")
 class ConstruoContractTest {
     @TempDir lateinit var projectDirectory: Path
+
+    @Test
+    fun `native runtime classpath is resolved only when the verifier executes`() {
+        val buildScript = Path.of(requiredProperty("indexino.nativeBuildScript")).readText()
+        val assignment =
+            "systemProperty(\"indexino.thinRuntimeClasspath\", thinRuntimeClasspath.asPath)"
+        val assignmentIndex = buildScript.indexOf(assignment)
+        val doFirstIndex = buildScript.lastIndexOf("doFirst {", assignmentIndex)
+        val doFirstEnd = buildScript.indexOf("\n        }", doFirstIndex)
+
+        assertTrue(assignmentIndex >= 0, "Missing native runtime classpath assignment")
+        assertTrue(
+            doFirstIndex >= 0 && assignmentIndex < doFirstEnd,
+            "Native runtime classpath must be resolved inside the verifier's doFirst action",
+        )
+    }
 
     @Test
     fun `public mac package lifecycle includes the metadata finalizer`() {

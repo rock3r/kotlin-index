@@ -150,6 +150,9 @@ indexing equivalent clean fixtures, and writes per-target AOT diagnostics plus n
 and artifact-size reports under `build/reports/native-distributions/`. Matching-host verification is
 never up-to-date or restored from the build cache because host tools, console behavior, and OS runtime
 compatibility cannot be represented safely as reusable Gradle state.
+The thin runtime dependency collection remains a declared verifier input but is converted to a
+classpath string only in the selected verifier's execution action, so unrelated Gradle tasks do not
+resolve native-verification dependencies during configuration.
 
 ## Phased delivery
 

@@ -428,6 +428,7 @@ val verifyConstruoContract by
             layout.projectDirectory.file(
                 "buildSrc/src/main/java/dev/sebastiano/indexino/buildlogic/NormalizedJar.java"
             )
+        val nativeBuildScript = layout.projectDirectory.file("build.gradle.kts")
         val macPackageFinalizers =
             tasks.named<PackageTask>("packageMacArm64").map { packageTask ->
                 packageTask.finalizedBy
@@ -438,6 +439,7 @@ val verifyConstruoContract by
             }
         inputs.file(nativeDistributionPinsFile).withPropertyName("nativeDistributionPins")
         inputs.file(normalizedJarSource).withPropertyName("normalizedJarSource")
+        inputs.file(nativeBuildScript).withPropertyName("nativeBuildScript")
         inputs
             .file(normalizedCliJar.flatMap(NormalizedJar::getArchiveFile))
             .withPropertyName("normalizedCliJar")
@@ -459,6 +461,7 @@ val verifyConstruoContract by
             shrunkCliJar.flatMap(ShadowJar::getArchiveFile).get().asFile.absolutePath,
         )
         systemProperty("indexino.normalizedJarSource", normalizedJarSource.asFile.absolutePath)
+        systemProperty("indexino.nativeBuildScript", nativeBuildScript.asFile.absolutePath)
         systemProperty("indexino.macPackageFinalizers", macPackageFinalizers.get())
     }
 
@@ -521,6 +524,7 @@ fun registerNativeDistributionVerification(taskSuffix: String, artifactSuffix: S
             check(!reports.exists() || reports.deleteRecursively()) {
                 "Could not clear native verification reports: $reports"
             }
+            systemProperty("indexino.thinRuntimeClasspath", thinRuntimeClasspath.asPath)
         }
         inputs.dir(targetRuntimeImage).withPropertyName("targetRuntimeImage")
         inputs.file(layout.projectDirectory.file("LICENSE")).withPropertyName("applicationLicense")
@@ -541,7 +545,6 @@ fun registerNativeDistributionVerification(taskSuffix: String, artifactSuffix: S
             normalizedApplicationJar.get().asFile.absolutePath,
         )
         systemProperty("indexino.aotCache", aotCache.get().asFile.absolutePath)
-        systemProperty("indexino.thinRuntimeClasspath", thinRuntimeClasspath.asPath)
         systemProperty("indexino.unshrunkJar", unshrunkApplicationJar.get().asFile.absolutePath)
         systemProperty("indexino.r8Jar", r8ApplicationJar.get().asFile.absolutePath)
         systemProperty("indexino.version", version.toString())
