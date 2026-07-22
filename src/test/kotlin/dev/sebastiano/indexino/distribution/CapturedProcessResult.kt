@@ -35,8 +35,8 @@ internal fun runCapturedProcess(
         }
         return CapturedProcessResult(
             process.exitValue(),
-            Files.readString(stdout),
-            Files.readString(stderr),
+            String(Files.readAllBytes(stdout), Charsets.UTF_8),
+            String(Files.readAllBytes(stderr), Charsets.UTF_8),
         )
     } finally {
         deleteCaptureFile(stdout)

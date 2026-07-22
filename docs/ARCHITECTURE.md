@@ -153,8 +153,9 @@ and artifact-size reports under `build/reports/native-distributions/`. Matching-
 never up-to-date or restored from the build cache because host tools, console behavior, and OS runtime
 compatibility cannot be represented safely as reusable Gradle state.
 Report cleanup uses a non-following delete task so a symlink at the predictable report path cannot
-escape the build directory. Process output is captured in task-owned files, while timeout cleanup
-re-snapshots descendants during bounded termination. Every observed tree member is forced down
+escape the build directory. Process output is captured in task-owned files and decoded with UTF-8
+replacement semantics for platform-native diagnostic bytes, while timeout cleanup re-snapshots
+descendants during bounded termination. Every observed tree member is forced down
 without invoking graceful-termination hooks, preventing either a root or descendant hook from
 creating a last-moment orphan. Inherited streams and late child creation therefore cannot hang or
 escape a verification run.

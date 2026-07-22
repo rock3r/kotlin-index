@@ -26,6 +26,27 @@ class NativeCompatibilityTest {
     @TempDir lateinit var tempDir: Path
 
     @Test
+    fun `captured output tolerates bytes outside UTF-8`() {
+        val command =
+            if (requiredProperty("indexino.nativeTarget") == WINDOWS_X64) {
+                arrayOf(
+                    "powershell.exe",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    "[Console]::OpenStandardOutput().WriteByte(255)",
+                )
+            } else {
+                arrayOf("/bin/sh", "-c", "printf '\\377'")
+            }
+
+        val result = runCommand(tempDir, 10L, TimeUnit.SECONDS, *command)
+
+        assertEquals(0, result.exitCode, result.diagnostic())
+        assertTrue(result.stdout.isNotEmpty(), "Malformed output byte was discarded")
+    }
+
+    @Test
     fun `completed process does not wait for descendant held output streams`() {
         val childPidFile = tempDir.resolve("output-holder.pid")
         val command =

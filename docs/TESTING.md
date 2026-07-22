@@ -82,8 +82,9 @@ A differential golden suite compares stdout/JSONL, stderr routing, exit codes, i
 the manifest schema/version across the thin Maven runtime classpath, unshrunk fat JAR, R8 JAR, and
 the target's real Roast executable. Each entry point independently indexes an equivalent clean
 fixture so store creation, schema/version, and representative records are compared; only the
-documented volatile `builtAt` value is normalized. Process output is captured in task-owned files so
-a descendant that inherits stdout or stderr cannot keep a completed launch blocked. Timed-out
+documented volatile `builtAt` value is normalized. Process output is captured in task-owned files and
+decoded with UTF-8 replacement semantics so platform-native diagnostic bytes cannot abort the
+verifier. A descendant that inherits stdout or stderr cannot keep a completed launch blocked. Timed-out
 children are forcibly terminated so a launcher deadlock cannot hang the host job; descendant
 Git/topology processes are re-snapshotted throughout the same bounded cleanup. Every observed member
 of a timed-out tree is forcibly terminated, so neither a root nor descendant graceful-termination
