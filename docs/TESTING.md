@@ -68,6 +68,8 @@ missing-Git diagnostics, the full Kotlin/Java/XML index/query workload, and relo
 task additionally checks PowerShell and `cmd.exe` waiting/redirection/exit propagation and sends a
 real console `CTRL_C_EVENT`. These tasks must run on matching native hosts; cross-packaging is not a
 substitute for launcher verification.
+The handler is enabled only by the packaged Roast VM marker; unit coverage proves direct JVM
+launches do not install the halt-based callback and locks the marked-launch ordering/event mapping.
 
 The same task verifies AOT semantically through copied launcher configurations. Strict mode must
 load the target-default cache before and after relocation and must fail for missing, corrupt, or

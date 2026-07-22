@@ -152,6 +152,7 @@ fun nativeDistributionPin(name: String) =
     }
 
 val nativeVmArgs = listOf("--enable-native-access=ALL-UNNAMED")
+val roastVmArgs = nativeVmArgs + "-Dindexino.roastLauncher=true"
 val aotTrainingFixture = layout.projectDirectory.dir("gradle/aot-training/fixture")
 val aotTrainingArguments =
     listOf(
@@ -227,7 +228,7 @@ construo {
         version.set(nativeDistributionPin("roast.version"))
         runOnFirstThread.set(true)
         useZgc.set(false)
-        vmArgs.addAll(nativeVmArgs)
+        vmArgs.addAll(roastVmArgs)
     }
     targets {
         create<Target.Linux>("linuxX64") {

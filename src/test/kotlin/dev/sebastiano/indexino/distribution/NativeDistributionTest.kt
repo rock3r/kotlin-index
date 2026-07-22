@@ -87,7 +87,8 @@ class NativeDistributionTest {
             assertContains(launcherConfiguration, "\"useZgcIfSupportedOs\":false")
             assertContains(
                 launcherConfiguration,
-                "\"vmArgs\":[\"--enable-native-access=ALL-UNNAMED\"]",
+                "\"vmArgs\":[\"--enable-native-access=ALL-UNNAMED\"," +
+                    "\"-Dindexino.roastLauncher=true\"]",
             )
             assertFalse(launcherConfiguration.contains("AOTMode"))
             assertFalse(launcherConfiguration.contains("-Xlog:aot"))
@@ -427,9 +428,12 @@ class NativeDistributionTest {
     private fun configureAotVerification(installation: Path, mode: String) {
         val configuration = installation.resolve("app/indexino.json")
         val original = configuration.readText()
-        val productionArgs = "\"vmArgs\":[\"--enable-native-access=ALL-UNNAMED\"]"
+        val productionArgs =
+            "\"vmArgs\":[\"--enable-native-access=ALL-UNNAMED\"," +
+                "\"-Dindexino.roastLauncher=true\"]"
         val verificationArgs =
-            "\"vmArgs\":[\"--enable-native-access=ALL-UNNAMED\",\"-XX:AOTMode=$mode\",\"-Xlog:aot=info\"]"
+            "\"vmArgs\":[\"--enable-native-access=ALL-UNNAMED\"," +
+                "\"-Dindexino.roastLauncher=true\",\"-XX:AOTMode=$mode\",\"-Xlog:aot=info\"]"
         assertContains(original, productionArgs)
         configuration.writeText(original.replace(productionArgs, verificationArgs))
     }
@@ -470,8 +474,12 @@ class NativeDistributionTest {
     private fun configureAotMode(installation: Path, mode: String) {
         val configuration = installation.resolve("app/indexino.json")
         val original = configuration.readText()
-        val productionArgs = "\"vmArgs\":[\"--enable-native-access=ALL-UNNAMED\"]"
-        val modeArgs = "\"vmArgs\":[\"--enable-native-access=ALL-UNNAMED\",\"-XX:AOTMode=$mode\"]"
+        val productionArgs =
+            "\"vmArgs\":[\"--enable-native-access=ALL-UNNAMED\"," +
+                "\"-Dindexino.roastLauncher=true\"]"
+        val modeArgs =
+            "\"vmArgs\":[\"--enable-native-access=ALL-UNNAMED\"," +
+                "\"-Dindexino.roastLauncher=true\",\"-XX:AOTMode=$mode\"]"
         assertContains(original, productionArgs)
         configuration.writeText(original.replace(productionArgs, modeArgs))
     }

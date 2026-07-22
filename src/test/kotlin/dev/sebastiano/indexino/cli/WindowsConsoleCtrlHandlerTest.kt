@@ -8,10 +8,24 @@ import kotlin.test.assertTrue
 
 class WindowsConsoleCtrlHandlerTest {
     @Test
+    fun `windows direct JVM launch does not install the Roast console handler`() {
+        var registered = false
+
+        WindowsConsoleCtrlHandler.install(
+            osName = "Windows 11",
+            enableInterrupts = {},
+            register = { registered = true },
+        )
+
+        assertFalse(registered)
+    }
+
+    @Test
     fun `windows launch enables ctrl c before installing the handler`() {
         val calls = mutableListOf<String>()
 
         WindowsConsoleCtrlHandler.install(
+            roastLauncher = true,
             osName = "Windows 11",
             enableInterrupts = { calls += "enable" },
             register = { calls += "register" },
@@ -27,6 +41,7 @@ class WindowsConsoleCtrlHandlerTest {
         var exitCode: Int? = null
 
         WindowsConsoleCtrlHandler.install(
+            roastLauncher = true,
             osName = "Windows 11",
             enableInterrupts = {},
             register = { installed = it },
@@ -44,6 +59,7 @@ class WindowsConsoleCtrlHandlerTest {
         var halted = false
 
         WindowsConsoleCtrlHandler.install(
+            roastLauncher = true,
             osName = "Windows 11",
             enableInterrupts = {},
             register = { installed = it },
@@ -60,6 +76,7 @@ class WindowsConsoleCtrlHandlerTest {
         var halted = false
 
         WindowsConsoleCtrlHandler.install(
+            roastLauncher = true,
             osName = "Linux",
             register = { registered = true },
             halt = { halted = true },

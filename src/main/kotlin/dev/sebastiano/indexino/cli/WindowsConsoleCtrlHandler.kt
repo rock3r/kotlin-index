@@ -6,12 +6,13 @@ import com.sun.jna.Native
 
 internal object WindowsConsoleCtrlHandler {
     fun install(
+        roastLauncher: Boolean = System.getProperty(ROAST_LAUNCHER_PROPERTY).toBoolean(),
         osName: String = System.getProperty("os.name"),
         enableInterrupts: () -> Unit = ::enableConsoleInterrupts,
         register: (((Int) -> Boolean) -> Unit) = ::registerConsoleHandler,
         halt: (Int) -> Unit = Runtime.getRuntime()::halt,
     ) {
-        if (!osName.startsWith("Windows", ignoreCase = true)) return
+        if (!roastLauncher || !osName.startsWith("Windows", ignoreCase = true)) return
         enableInterrupts()
         register { controlType ->
             if (controlType !in INTERRUPT_CONTROL_TYPES) {
@@ -55,4 +56,5 @@ internal object WindowsConsoleCtrlHandler {
     private const val CTRL_C_EVENT = 0
     private const val CTRL_BREAK_EVENT = 1
     private const val INTERRUPT_EXIT_CODE = 130
+    internal const val ROAST_LAUNCHER_PROPERTY = "indexino.roastLauncher"
 }
