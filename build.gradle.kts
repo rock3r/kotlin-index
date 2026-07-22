@@ -198,7 +198,7 @@ fun registerAotTraining(
         )
         roastWorkingDirectory.set(".")
         fixtureVersion.set("1")
-        vmArgs.set(nativeVmArgs)
+        vmArgs.set(roastVmArgs)
         trainingArguments.set(aotTrainingArguments)
         minimumHeap.set("128m")
         maximumHeap.set("1024m")
