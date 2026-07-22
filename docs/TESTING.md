@@ -53,13 +53,15 @@ task-private staging copy, the relative Roast classpath/main/options are exact, 
 option variables are removed, the normalized JAR metadata survives training, the cache is published
 atomically at its separate output, and a second unchanged invocation is locally `UP-TO-DATE`.
 Matching-host `trainAot<Target>` runs exercise the real JBR 25 one-step `AOTCacheOutput` workflow on
-the committed Kotlin/Java/XML selection-context fixture; build-cache storage and restoration are
-disabled for these metadata- and runtime-sensitive outputs.
+the committed Kotlin/Java/XML selection-context fixture. Git attributes enforce LF checkouts for
+those text sources so the Kotlin PSI workload is identical on Windows; build-cache storage and
+restoration are disabled for these metadata- and runtime-sensitive outputs.
 
 Each `verifyNativeDistribution<Target>` task packages with the matching verified target JBRSDK 25,
 extracts the ZIP with the platform's standard tool, and drives the actual Roast executable from an
 arbitrary caller directory. The suite checks the flat layout, normalized JAR timestamp and bytes,
-the byte-identical task-owned AOT cache overlay and cache-free runtime input, explicit jlink modules,
+the byte-identical task-owned AOT cache overlay at the platform HotSpot location and cache-free
+runtime input, explicit jlink modules,
 the complete runtime legal tree byte-for-byte, launcher configuration,
 target-JBR packaging tools, POSIX modes,
 missing-Git diagnostics, the full Kotlin/Java/XML index/query workload, and relocation. The Windows

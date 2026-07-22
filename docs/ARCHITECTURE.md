@@ -122,7 +122,8 @@ copies them into a task-private flat Roast staging root, restores only the match
 runs the production classpath/main/VM options with a bounded heap and hermetic environment. The
 cache is assembled at a temporary path and atomically published as a separate task output. Construo
 infers the producer dependency from the target-specific `packageFiles` provider and overlays only
-that cache at `runtime/lib/server/classes.jsa`; the archive still uses the original stripped runtime
+that cache at HotSpot's platform location: `runtime/lib/server/classes.jsa` on Linux/macOS and
+`runtime/bin/server/classes.jsa` on Windows. The archive still uses the original stripped runtime
 and exact normalized JAR. AOT task build caching is disabled until reproducibility and cross-runner
 compatibility are proven, while unchanged local inputs may reuse an up-to-date output.
 

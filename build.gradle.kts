@@ -290,7 +290,7 @@ construo {
                     javaExecutableName = "java.exe",
                 )
             packageFiles.put(
-                "runtime/lib/server/classes.jsa",
+                "runtime/bin/server/classes.jsa",
                 aotTraining.flatMap(AotTrainingTask::getAotCache),
             )
         }
