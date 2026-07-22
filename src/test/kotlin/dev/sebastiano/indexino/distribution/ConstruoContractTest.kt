@@ -4,7 +4,11 @@ import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.FileTime
+import java.nio.file.attribute.PosixFileAttributeView
+import java.nio.file.attribute.PosixFilePermission
+import java.security.MessageDigest
 import java.util.Properties
 import java.util.jar.JarFile
 import java.util.zip.ZipFile
@@ -26,19 +30,81 @@ class ConstruoContractTest {
     @Test
     fun `normalized application jar has deterministic archive safe metadata`() {
         val normalizedJar = Path.of(requiredProperty("indexino.normalizedCliJar"))
+        val shrunkJar = Path.of(requiredProperty("indexino.shrunkCliJar"))
         assertTrue(Files.isRegularFile(normalizedJar), "Missing normalized application JAR")
+        assertEquals(-1L, Files.mismatch(shrunkJar, normalizedJar))
         assertEquals("indexino-cli.jar", normalizedJar.fileName.toString())
         assertEquals(
             NORMALIZED_JAR_MTIME_MILLIS,
             Files.getLastModifiedTime(normalizedJar).toMillis(),
         )
         assertEquals(0, Files.getLastModifiedTime(normalizedJar).toMillis() / 1_000L % 2L)
+        assertOrdinaryJarPermissions(normalizedJar)
         JarFile(normalizedJar.toFile()).use { jar ->
             assertEquals(
                 "dev.sebastiano.indexino.cli.MainCommandKt",
                 jar.manifest.mainAttributes.getValue("Main-Class"),
             )
         }
+    }
+
+    @Test
+    fun `normalized jar task repairs perturbed output metadata`() {
+        val source = Path.of(requiredProperty("indexino.normalizedJarSource"))
+        val fixtureSource =
+            projectDirectory.resolve(
+                "buildSrc/src/main/java/dev/sebastiano/indexino/buildlogic/NormalizedJar.java"
+            )
+        fixtureSource.parent.createDirectories()
+        Files.copy(source, fixtureSource, StandardCopyOption.REPLACE_EXISTING)
+        projectDirectory
+            .resolve("settings.gradle.kts")
+            .writeText("rootProject.name = \"normalized-jar-lifecycle\"\n")
+        projectDirectory
+            .resolve("build.gradle.kts")
+            .writeText(
+                """
+                import dev.sebastiano.indexino.buildlogic.NormalizedJar
+
+                tasks.register<NormalizedJar>("normalizedJar") {
+                    inputJar.set(layout.projectDirectory.file("input.jar"))
+                    archiveFileName.set("output.jar")
+                    destinationDirectory.set(layout.buildDirectory.dir("normalized"))
+                    normalizedTimestampMillis.set($NORMALIZED_JAR_MTIME_MILLIS)
+                }
+                """
+                    .trimIndent()
+            )
+        val input = projectDirectory.resolve("input.jar")
+        input.writeText("reproducible application bytes")
+        Files.getFileAttributeView(input, PosixFileAttributeView::class.java)
+            ?.setPermissions(setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE))
+
+        val first = runGradle("normalizedJar")
+        assertEquals(TaskOutcome.SUCCESS, first.task(":normalizedJar")?.outcome)
+        val output = projectDirectory.resolve("build/normalized/output.jar")
+        Files.setLastModifiedTime(output, FileTime.fromMillis(PERTURBED_JAR_MTIME_MILLIS))
+
+        val second = runGradle("normalizedJar")
+
+        assertEquals(TaskOutcome.SUCCESS, second.task(":normalizedJar")?.outcome)
+        assertEquals(NORMALIZED_JAR_MTIME_MILLIS, Files.getLastModifiedTime(output).toMillis())
+        assertOrdinaryJarPermissions(output)
+    }
+
+    private fun assertOrdinaryJarPermissions(path: Path) {
+        val attributes =
+            Files.getFileAttributeView(path, PosixFileAttributeView::class.java)?.readAttributes()
+                ?: return
+        assertEquals(
+            setOf(
+                PosixFilePermission.OWNER_READ,
+                PosixFilePermission.OWNER_WRITE,
+                PosixFilePermission.GROUP_READ,
+                PosixFilePermission.OTHERS_READ,
+            ),
+            attributes.permissions(),
+        )
     }
 
     @Test
@@ -90,7 +156,7 @@ class ConstruoContractTest {
         assertTrue(result.task(":syntheticRoast")?.outcome == TaskOutcome.SUCCESS)
         assertTrue(result.task(":assertConstruoContract")?.outcome == TaskOutcome.SUCCESS)
         val entries =
-            readCentralDirectory(projectDirectory.resolve("build/contract/synthetic.zip"))
+            readZipCentralDirectory(projectDirectory.resolve("build/contract/synthetic.zip"))
                 .associateBy(ZipEntryMetadata::name)
         assertEquals(493, entries.getValue("indexino").unixMode)
         assertEquals(493, entries.getValue("runtime/").unixMode)
@@ -118,7 +184,7 @@ class ConstruoContractTest {
             server.start()
             writeFixture(pluginVersion, "http://127.0.0.1:${server.address.port}/jdk.tar.gz")
 
-            val result = runGradleAndFail("verifyJdkLinuxX64")
+            val result = runGradleAndFail("unzipJdkLinuxX64")
 
             assertTrue(result.output.contains("SHA-256 mismatch"), result.output)
             assertFalse(
@@ -130,10 +196,63 @@ class ConstruoContractTest {
         }
     }
 
+    @Test
+    fun `cached JBR is reverified before extraction`() {
+        val pluginVersion = requiredProperty("indexino.construoVersion")
+        val archive = "initially trusted JBR cache entry".toByteArray()
+        withArchiveServer("/jdk.tar.gz", archive) { url ->
+            writeFixture(pluginVersion, url, jdkSha256 = sha256(archive))
+            runGradle("downloadJdkLinuxX64")
+
+            val result = runGradleAndFail("verifyJdkLinuxX64")
+
+            assertTrue(result.output.contains("SHA-256 mismatch"), result.output)
+            assertFalse(
+                projectDirectory.resolve("build/construo/jdk/linuxX64.tar.gz").toFile().exists(),
+                "A warm-cache JBR mismatch must remove the untrusted archive",
+            )
+            assertFalse(
+                projectDirectory.resolve("build/construo/jdk/linuxX64").toFile().exists(),
+                "A warm-cache JBR mismatch must fail before extraction",
+            )
+        }
+    }
+
+    @Test
+    fun `cached Roast is reverified before extraction`() {
+        val pluginVersion = requiredProperty("indexino.construoVersion")
+        val archive = "initially trusted Roast cache entry".toByteArray()
+        withArchiveServer("/roast.zip", archive) { url ->
+            writeFixture(pluginVersion, "http://127.0.0.1/unused-jdk.tar.gz", url, sha256(archive))
+            runGradle("downloadRoastLinuxX64")
+
+            val result = runGradleAndFail("unzipRoastLinuxX64")
+
+            assertTrue(result.output.contains("SHA-256 mismatch"), result.output)
+            assertFalse(
+                projectDirectory
+                    .resolve("build/construo/roast-zip/linuxX64/roast.zip")
+                    .toFile()
+                    .exists(),
+                "A warm-cache Roast mismatch must remove the untrusted archive",
+            )
+            assertFalse(
+                projectDirectory.resolve("build/construo/roast-exe/linuxX64").toFile().exists(),
+                "A warm-cache Roast mismatch must fail before extraction",
+            )
+        }
+    }
+
     @Suppress(
         "LongMethod"
     ) // Keeping the TestKit build script contiguous makes its Gradle model auditable.
-    private fun writeFixture(pluginVersion: String, jdkUrl: String) {
+    private fun writeFixture(
+        pluginVersion: String,
+        jdkUrl: String,
+        roastUrl: String = "http://127.0.0.1/unused-roast.zip",
+        roastSha256: String = "1".repeat(64),
+        jdkSha256: String = "0".repeat(64),
+    ) {
         projectDirectory
             .resolve("settings.gradle.kts")
             .writeText(
@@ -149,12 +268,14 @@ class ConstruoContractTest {
                 """
             import io.github.fourlastor.construo.ConstruoPluginExtension
             import io.github.fourlastor.construo.Target
+            import io.github.fourlastor.construo.task.DownloadTask
             import io.github.fourlastor.construo.task.PackageTask
             import io.github.fourlastor.construo.task.jvm.CreateRuntimeImageTask
             import io.github.fourlastor.construo.task.jvm.RoastTask
             import org.gradle.api.DefaultTask
             import org.gradle.api.file.RegularFileProperty
             import org.gradle.api.tasks.OutputFile
+            import org.gradle.api.tasks.Internal
             import org.gradle.api.tasks.TaskAction
 
             plugins {
@@ -171,6 +292,15 @@ class ConstruoContractTest {
                         parentFile.mkdirs()
                         writeText("generated")
                     }
+                }
+            }
+
+            abstract class CorruptArchive : DefaultTask() {
+                @get:Internal abstract val archiveFile: RegularFileProperty
+
+                @TaskAction
+                fun corrupt() {
+                    archiveFile.get().asFile.writeText("corrupted warm cache entry")
                 }
             }
 
@@ -199,15 +329,17 @@ class ConstruoContractTest {
                     create<Target.Linux>("linuxX64") {
                         architecture.set(Target.Architecture.X86_64)
                         jdkUrl.set("$jdkUrl")
-                        jdkSha256.set("${"0".repeat(64)}")
-                        roastSha256.set("${"1".repeat(64)}")
+                        jdkSha256.set("$jdkSha256")
+                        roastUrl.set("$roastUrl")
+                        roastSha256.set("$roastSha256")
                         archiveFile.set(layout.buildDirectory.file("distributions/indexino-linux-x64.zip"))
                         packagingToolJdk.set(Target.PackagingToolJdk.TARGET_JDK)
                     }
                     create<Target.MacOs>("macArm64") {
                         architecture.set(Target.Architecture.AARCH64)
                         jdkUrl.set("$jdkUrl")
-                        jdkSha256.set("${"2".repeat(64)}")
+                        jdkSha256.set("$jdkSha256")
+                        roastUrl.set("$roastUrl")
                         roastSha256.set("${"3".repeat(64)}")
                         archiveFile.set(layout.buildDirectory.file("distributions/indexino-macos-arm64.zip"))
                         packagingToolJdk.set(Target.PackagingToolJdk.TARGET_JDK)
@@ -217,7 +349,8 @@ class ConstruoContractTest {
                     create<Target.Windows>("windowsX64") {
                         architecture.set(Target.Architecture.X86_64)
                         jdkUrl.set("$jdkUrl")
-                        jdkSha256.set("${"4".repeat(64)}")
+                        jdkSha256.set("$jdkSha256")
+                        roastUrl.set("$roastUrl")
                         roastSha256.set("${"5".repeat(64)}")
                         archiveFile.set(layout.buildDirectory.file("distributions/indexino-windows-x64.zip"))
                         packagingToolJdk.set(Target.PackagingToolJdk.TARGET_JDK)
@@ -226,6 +359,22 @@ class ConstruoContractTest {
                     }
                 }
             }
+
+            val corruptCachedJdk = tasks.register<CorruptArchive>("corruptCachedJdk") {
+                dependsOn("downloadJdkLinuxX64")
+                archiveFile.set(
+                    tasks.named<DownloadTask>("downloadJdkLinuxX64").flatMap { it.dest }
+                )
+            }
+            tasks.named("verifyJdkLinuxX64") { dependsOn(corruptCachedJdk) }
+
+            val corruptCachedRoast = tasks.register<CorruptArchive>("corruptCachedRoast") {
+                dependsOn("downloadRoastLinuxX64")
+                archiveFile.set(
+                    tasks.named<DownloadTask>("downloadRoastLinuxX64").flatMap { it.dest }
+                )
+            }
+            tasks.named("verifyRoastLinuxX64") { dependsOn(corruptCachedRoast) }
 
             val syntheticPackage = tasks.register<PackageTask>("syntheticPackage") {
                 from.set(layout.projectDirectory.dir("package-input"))
@@ -312,52 +461,33 @@ class ConstruoContractTest {
             .withArguments("--stacktrace", *arguments)
             .buildAndFail()
 
+    private fun withArchiveServer(path: String, archive: ByteArray, block: (String) -> Unit) {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        try {
+            server.createContext(path) { exchange ->
+                exchange.sendResponseHeaders(200, archive.size.toLong())
+                exchange.responseBody.use { it.write(archive) }
+            }
+            server.start()
+            block("http://127.0.0.1:${server.address.port}$path")
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    private fun sha256(bytes: ByteArray): String =
+        MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { byte ->
+            val value = byte.toInt() and 0xff
+            "${HEX_DIGITS[value ushr 4]}${HEX_DIGITS[value and 0x0f]}"
+        }
+
     private fun requiredProperty(name: String): String =
         requireNotNull(System.getProperty(name)) { "Missing $name" }
 
-    private fun readCentralDirectory(archive: Path): List<ZipEntryMetadata> {
-        val bytes = Files.readAllBytes(archive)
-        val entries = mutableListOf<ZipEntryMetadata>()
-        var offset = 0
-        while (offset <= bytes.size - CENTRAL_DIRECTORY_HEADER_SIZE) {
-            if (littleEndianInt(bytes, offset) != CENTRAL_DIRECTORY_SIGNATURE) {
-                offset++
-                continue
-            }
-            val dosTime = littleEndianShort(bytes, offset + 12)
-            val nameLength = littleEndianShort(bytes, offset + 28)
-            val extraLength = littleEndianShort(bytes, offset + 30)
-            val commentLength = littleEndianShort(bytes, offset + 32)
-            val externalAttributes = littleEndianInt(bytes, offset + 38)
-            val name =
-                String(bytes, offset + CENTRAL_DIRECTORY_HEADER_SIZE, nameLength, Charsets.UTF_8)
-            entries +=
-                ZipEntryMetadata(
-                    name = name,
-                    unixMode = externalAttributes ushr 16 and 511,
-                    dosSecond = (dosTime and 31) * 2,
-                )
-            offset += CENTRAL_DIRECTORY_HEADER_SIZE + nameLength + extraLength + commentLength
-        }
-        return entries
-    }
-
-    private fun littleEndianInt(bytes: ByteArray, offset: Int): Int =
-        bytes[offset].toInt() and
-            0xff or
-            ((bytes[offset + 1].toInt() and 0xff) shl 8) or
-            ((bytes[offset + 2].toInt() and 0xff) shl 16) or
-            ((bytes[offset + 3].toInt() and 0xff) shl 24)
-
-    private fun littleEndianShort(bytes: ByteArray, offset: Int): Int =
-        bytes[offset].toInt() and 0xff or ((bytes[offset + 1].toInt() and 0xff) shl 8)
-
-    private data class ZipEntryMetadata(val name: String, val unixMode: Int, val dosSecond: Int)
-
     private companion object {
-        const val CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50
-        const val CENTRAL_DIRECTORY_HEADER_SIZE = 46
         const val NORMALIZED_JAR_MTIME_MILLIS = 1_700_000_000_000L
+        const val PERTURBED_JAR_MTIME_MILLIS = 1_704_067_261_000L
+        const val HEX_DIGITS = "0123456789abcdef"
         val SHA256 = Regex("[0-9a-f]{64}")
     }
 }
