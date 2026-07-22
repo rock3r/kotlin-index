@@ -516,6 +516,12 @@ fun registerNativeDistributionVerification(taskSuffix: String, artifactSuffix: S
         outputs.dir(verificationReportDirectory).withPropertyName("verificationReports")
         outputs.upToDateWhen { false }
         outputs.doNotCacheIf("Verification depends on matching-host native behavior") { true }
+        doFirst {
+            val reports = verificationReportDirectory.get().asFile
+            check(!reports.exists() || reports.deleteRecursively()) {
+                "Could not clear native verification reports: $reports"
+            }
+        }
         inputs.dir(targetRuntimeImage).withPropertyName("targetRuntimeImage")
         inputs.file(layout.projectDirectory.file("LICENSE")).withPropertyName("applicationLicense")
         inputs
@@ -544,6 +550,14 @@ fun registerNativeDistributionVerification(taskSuffix: String, artifactSuffix: S
             verificationReportDirectory.get().asFile.absolutePath,
         )
         systemProperty("indexino.expectedJbrVersion", nativeDistributionPin("jbr.version"))
+        systemProperty(
+            "indexino.macFinalizerStaging",
+            layout.buildDirectory
+                .dir("tmp/finalizedMacArm64Archive/staging")
+                .get()
+                .asFile
+                .absolutePath,
+        )
         systemProperty(
             "indexino.applicationLicense",
             layout.projectDirectory.file("LICENSE").asFile.absolutePath,

@@ -12,6 +12,7 @@ import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -26,6 +27,7 @@ class NativeCompatibilityTest {
 
     @Test
     fun `timed out compatibility process is terminated`() {
+        val childPidFile = tempDir.resolve("timed-out-child.pid")
         val command =
             if (requiredProperty("indexino.nativeTarget") == WINDOWS_X64) {
                 arrayOf(
@@ -33,19 +35,36 @@ class NativeCompatibilityTest {
                     "-NoProfile",
                     "-NonInteractive",
                     "-Command",
-                    "Start-Sleep -Seconds 30",
+                    "${'$'}child = Start-Process -FilePath 'powershell.exe' " +
+                        "-ArgumentList '-NoProfile','-NonInteractive','-Command'," +
+                        "'Start-Sleep -Seconds 30' -PassThru; " +
+                        "Set-Content -LiteralPath '${powershellQuote(childPidFile)}' " +
+                        "-Value ${'$'}child.Id; Wait-Process -Id ${'$'}child.Id",
                 )
             } else {
-                arrayOf("/bin/sh", "-c", "exec sleep 30")
+                arrayOf(
+                    "/bin/sh",
+                    "-c",
+                    "sleep 30 & child=${'$'}!; printf '%s' \"${'$'}child\" > \"${'$'}1\"; " +
+                        "wait \"${'$'}child\"",
+                    "sh",
+                    childPidFile.toString(),
+                )
             }
         val startedAt = System.nanoTime()
 
         val failure =
             assertFailsWith<AssertionError> {
-                runCommand(tempDir, 100L, TimeUnit.MILLISECONDS, *command)
+                runCommand(tempDir, 500L, TimeUnit.MILLISECONDS, *command)
             }
 
         assertContains(failure.message.orEmpty(), "timed out")
+        assertTrue(Files.isRegularFile(childPidFile), "Timed-out child PID was not recorded")
+        val childPid = childPidFile.readText().trim().toLong()
+        assertFalse(
+            ProcessHandle.of(childPid).map(ProcessHandle::isAlive).orElse(false),
+            "Timed-out descendant $childPid is still alive",
+        )
         assertTrue(
             TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - startedAt) < 5L,
             "Timed-out process cleanup exceeded five seconds",
@@ -332,16 +351,18 @@ class NativeCompatibilityTest {
             val stdout = executor.submit<String> { process.inputStream.bufferedReader().readText() }
             val stderr = executor.submit<String> { process.errorStream.bufferedReader().readText() }
             if (!process.waitFor(timeout, timeoutUnit)) {
-                process.destroy()
-                if (!process.waitFor(PROCESS_TERMINATION_GRACE_SECONDS, TimeUnit.SECONDS)) {
-                    process.destroyForcibly()
-                    process.waitFor(PROCESS_TERMINATION_GRACE_SECONDS, TimeUnit.SECONDS)
-                }
+                val terminated =
+                    terminateProcessTree(
+                        process,
+                        PROCESS_TERMINATION_GRACE_SECONDS,
+                        TimeUnit.SECONDS,
+                    )
                 process.inputStream.close()
                 process.errorStream.close()
                 process.outputStream.close()
                 stdout.cancel(true)
                 stderr.cancel(true)
+                assertTrue(terminated, "Could not terminate: ${command.joinToString(" ")}")
                 throw AssertionError("Process timed out: ${command.joinToString(" ")}")
             }
             return ProcessResult(process.exitValue(), stdout.get(), stderr.get())
@@ -368,11 +389,19 @@ class NativeCompatibilityTest {
 
     private data class ProcessResult(val exitCode: Int, val stdout: String, val stderr: String) {
         fun normalized(workspace: Path): ProcessResult {
-            fun normalize(value: String): String =
-                value
-                    .replace(workspace.toAbsolutePath().toString(), "<workspace>")
-                    .replace('\\', '/')
+            fun normalize(value: String): String {
+                val workspacePath = workspace.toAbsolutePath().toString()
+                val knownRepresentations =
+                    listOf(
+                            workspacePath.replace("\\", "\\\\"),
+                            workspacePath,
+                            workspacePath.replace('\\', '/'),
+                        )
+                        .distinct()
+                return knownRepresentations
+                    .fold(value) { normalized, path -> normalized.replace(path, "<workspace>") }
                     .replace(BUILT_AT_JSON) { match -> "${match.groupValues[1]}<volatile>" }
+            }
             return copy(stdout = normalize(stdout), stderr = normalize(stderr))
         }
 

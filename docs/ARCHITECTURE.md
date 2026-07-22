@@ -127,9 +127,10 @@ ZIP with `ditto`, replaces the staged application JAR and AOT cache with the exa
 re-archives with `ditto --norsrc`. This preserves the normalized JAR filesystem mtime when users
 extract with macOS `ditto` and prevents AppleDouble entries. The finalizer does not mutate Construo
 tasks or their inputs and is intentionally neither cacheable nor up-to-date because the JAR mtime
-and current task-owned AOT cache are part of the output contract. The public `packageMacArm64`
-lifecycle finalizes the raw Construo output before it completes; downstream checksum and upload
-tasks must consume only the finalized archive.
+and current task-owned AOT cache are part of the output contract. Its expanded staging tree is
+removed after both successful and failed finalization. The public `packageMacArm64` lifecycle
+finalizes the raw Construo output before it completes; downstream checksum and upload tasks must
+consume only the finalized archive.
 
 Each `trainAot<Target>` task treats the final jlink image and normalized JAR as immutable inputs. It
 copies them into a task-private flat Roast staging root, restores only the matching target JDK

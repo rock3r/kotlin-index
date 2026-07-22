@@ -72,19 +72,23 @@ substitute for launcher verification.
 The same task verifies AOT semantically through copied launcher configurations. Strict mode must
 load the target-default cache before and after relocation and must fail for missing, corrupt, or
 JAR-metadata-incompatible inputs. Automatic mode must use a valid cache and must still complete the
-full workload after rejecting a missing or corrupt cache. Exact pinned-JBR output is retained as a
-diagnostic report, while assertions use parsed cache-path, acceptance/rejection, and linked-class
-facts so incidental log wording is not the sole signal.
+full workload after rejecting a missing or corrupt cache, with the semantic log fact explicitly
+reporting that linked classes are disabled. The relocated strict-mode copy builds a new store rather
+than only reading the pre-relocation store. Exact pinned-JBR output is retained as a diagnostic
+report, while assertions use parsed cache-path, acceptance/rejection, and linked-class facts so
+incidental log wording is not the sole signal.
 
 A differential golden suite compares stdout/JSONL, stderr routing, exit codes, invalid usage, and
 the manifest schema/version across the thin Maven runtime classpath, unshrunk fat JAR, R8 JAR, and
 the target's real Roast executable. Each entry point independently indexes an equivalent clean
 fixture so store creation, schema/version, and representative records are compared; only the
 documented volatile `builtAt` value is normalized. Timed-out children are forcibly terminated so a
-launcher deadlock cannot hang the host job. The matching-host verifier is deliberately never
-up-to-date or restored from build cache. It also writes a report-only benchmark with five interleaved
-production-AOT and `AOTMode=off` launches, median wall/user time, and ZIP/runtime/JAR/AOT cache sizes
-to `build/reports/native-distributions/<target>/`.
+launcher deadlock cannot hang the host job; descendant Git/topology processes are terminated
+leaf-first as part of the same bounded cleanup. The matching-host verifier is deliberately never
+up-to-date or restored from build cache, and clears its report directory before every execution so
+failed runs cannot upload stale diagnostics. It also writes a report-only benchmark with five
+interleaved production-AOT and `AOTMode=off` launches, median wall/user time, and ZIP/runtime/JAR/AOT
+cache sizes to `build/reports/native-distributions/<target>/`.
 
 On macOS the public `packageMacArm64` lifecycle includes `finalizedMacArm64Archive`, which round-trips
 through native `ditto` and overlays the exact normalized JAR and current AOT cache. Verification

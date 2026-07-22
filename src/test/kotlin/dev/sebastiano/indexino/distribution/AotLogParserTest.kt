@@ -39,4 +39,21 @@ class AotLogParserTest {
         assertTrue(facts.rejected)
         assertEquals(false, facts.linkedClasses)
     }
+
+    @Test
+    fun `recognized rejection implies linked classes are disabled when JBR omits the final fact`() {
+        val facts =
+            AotLogParser.parse(
+                """
+                [0.004s][info][aot] Specified AOT cache not found (/app/runtime/lib/server/classes.jsa)
+                [0.005s][error][aot] Loading static archive failed.
+                [0.005s][error][aot] Unable to map shared spaces
+                """
+                    .trimIndent()
+            )
+
+        assertTrue(facts.rejected)
+        assertFalse(facts.accepted)
+        assertEquals(false, facts.linkedClasses)
+    }
 }

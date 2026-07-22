@@ -17,12 +17,14 @@ internal object AotLogParser {
         )
 
     fun parse(log: String): AotLogFacts {
-        val linkedClasses =
+        val explicitlyLinkedClasses =
             linkedClassesPattern.findAll(log).lastOrNull()?.groupValues?.get(1)?.toBooleanStrict()
+        val rejected = rejectionPatterns.any { it.containsMatchIn(log) }
+        val linkedClasses = explicitlyLinkedClasses ?: if (rejected) false else null
         return AotLogFacts(
             cachePath = cachePathPattern.find(log)?.value?.trimEnd('.', ',', ':', ';'),
             accepted = linkedClasses == true,
-            rejected = rejectionPatterns.any { it.containsMatchIn(log) },
+            rejected = rejected,
             linkedClasses = linkedClasses,
         )
     }

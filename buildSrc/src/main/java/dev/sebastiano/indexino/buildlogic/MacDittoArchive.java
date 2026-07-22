@@ -58,6 +58,7 @@ public abstract class MacDittoArchive extends DefaultTask {
         var normalizedJar = getNormalizedJar().get().getAsFile().toPath();
         var aotCache = getAotCache().get().getAsFile().toPath();
         var output = getOutputArchive().get().getAsFile().toPath();
+        RuntimeException taskFailure = null;
         try {
             deleteTree(staging);
             Files.createDirectories(staging);
@@ -109,7 +110,24 @@ public abstract class MacDittoArchive extends DefaultTask {
                 throw new GradleException("ditto did not produce a non-empty archive: " + output);
             }
         } catch (IOException failure) {
-            throw new GradleException("Could not finalize the macOS native archive with ditto", failure);
+            taskFailure =
+                    new GradleException(
+                            "Could not finalize the macOS native archive with ditto", failure);
+            throw taskFailure;
+        } catch (RuntimeException failure) {
+            taskFailure = failure;
+            throw failure;
+        } finally {
+            try {
+                deleteTree(staging);
+            } catch (IOException cleanupFailure) {
+                if (taskFailure != null) {
+                    taskFailure.addSuppressed(cleanupFailure);
+                } else {
+                    throw new GradleException(
+                            "Could not clean the macOS archive staging directory", cleanupFailure);
+                }
+            }
         }
     }
 

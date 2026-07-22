@@ -25,6 +25,18 @@ class NativeDistributionTest {
     @TempDir lateinit var tempDir: Path
 
     @Test
+    fun `mac package lifecycle removes expanded finalizer staging`() {
+        assumeTrue(
+            requiredProperty("indexino.nativeTarget") == MACOS_ARM64,
+            "macOS finalizer contract runs on macOS arm64 only",
+        )
+        assertFalse(
+            Files.exists(Path.of(requiredProperty("indexino.macFinalizerStaging"))),
+            "Mac finalizer retained its expanded runtime staging tree",
+        )
+    }
+
+    @Test
     fun `archive exposes the flat runtime metadata and license contract`() {
         val archive = requiredFile("indexino.nativeArchive")
         val target = requiredProperty("indexino.nativeTarget")
@@ -270,8 +282,9 @@ class NativeDistributionTest {
         Files.move(installation, relocated, StandardCopyOption.ATOMIC_MOVE)
         launcher = relocated.resolve(launcherRelativePath(target))
         assertAcceptedAotLaunch(launcher, caller, relocated, target)
-        assertCompleteWorkload(launcher, caller, workspace)
-        assertCallerRelativeInvocation(launcher, caller, workspace)
+        val relocatedWorkspace = createFixtureWorkspace("aot-strict-relocated-fixture")
+        assertCompleteWorkload(launcher, caller, relocatedWorkspace)
+        assertCallerRelativeInvocation(launcher, caller, relocatedWorkspace)
     }
 
     @Test
@@ -546,7 +559,11 @@ class NativeDistributionTest {
         val facts = AotLogParser.parse(result.stdout + result.stderr)
         assertFalse(facts.accepted, result.diagnostic())
         assertTrue(facts.rejected, result.diagnostic())
-        assertTrue(facts.linkedClasses != true, result.diagnostic())
+        if (expectSuccess) {
+            assertEquals(false, facts.linkedClasses, result.diagnostic())
+        } else {
+            assertTrue(facts.linkedClasses != true, result.diagnostic())
+        }
     }
 
     @Test
@@ -1089,11 +1106,10 @@ class NativeDistributionTest {
             val completed = process.waitFor(PROCESS_TIMEOUT_MINUTES, TimeUnit.MINUTES)
             if (!completed) {
                 val terminated =
-                    process
-                        .destroyForcibly()
-                        .waitFor(PROCESS_KILL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                    terminateProcessTree(process, PROCESS_KILL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                 process.inputStream.close()
                 process.errorStream.close()
+                process.outputStream.close()
                 stdout.cancel(true)
                 stderr.cancel(true)
                 assertTrue(terminated, "Could not terminate: ${command.joinToString(" ")}")
