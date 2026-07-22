@@ -116,6 +116,13 @@ target-specific archive. The shipped jlink image intentionally omits `runtime/bi
 retaining process helpers such as `jspawnhelper`; the application still launches external Git and
 topology tools when a command needs them.
 
+The macOS archive has one Indexino-owned downstream finalization step. It extracts Construo's raw
+ZIP with `ditto`, replaces the staged application JAR and AOT cache with the exact task inputs, and
+re-archives with `ditto --norsrc`. This preserves the normalized JAR filesystem mtime when users
+extract with macOS `ditto` and prevents AppleDouble entries. The finalizer does not mutate Construo
+tasks or their inputs and is intentionally neither cacheable nor up-to-date because the JAR mtime
+and current task-owned AOT cache are part of the output contract.
+
 Each `trainAot<Target>` task treats the final jlink image and normalized JAR as immutable inputs. It
 copies them into a task-private flat Roast staging root, restores only the matching target JDK
 `java` launcher into that private runtime, initializes the committed deterministic fixture, and
@@ -126,6 +133,12 @@ that cache at HotSpot's platform location: `runtime/lib/server/classes.jsa` on L
 `runtime/bin/server/classes.jsa` on Windows. The archive still uses the original stripped runtime
 and exact normalized JAR. AOT task build caching is disabled until reproducibility and cross-runner
 compatibility are proven, while unchanged local inputs may reuse an up-to-date output.
+
+Native verification augments only copied launcher JSON files with strict or diagnostic AOT flags;
+the production archive remains in automatic mode without logging flags. The verifier also compares
+the thin runtime classpath, unshrunk fat JAR, R8 JAR, and actual Roast launcher against one indexed
+fixture, and writes per-target AOT diagnostics plus non-gating launch-time and artifact-size reports
+under `build/reports/native-distributions/`.
 
 ## Phased delivery
 

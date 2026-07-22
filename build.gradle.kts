@@ -8,6 +8,7 @@ import com.vanniktech.maven.publish.SourcesJar
 import dev.detekt.gradle.Detekt
 import dev.detekt.gradle.DetektCreateBaselineTask
 import dev.sebastiano.indexino.buildlogic.AotTrainingTask
+import dev.sebastiano.indexino.buildlogic.MacDittoArchive
 import dev.sebastiano.indexino.buildlogic.NormalizedJar
 import io.github.fourlastor.construo.Target
 import io.github.fourlastor.construo.task.PackageTask
@@ -254,7 +255,9 @@ construo {
             roastSha256.set(nativeDistributionPin("macArm64.roastSha256"))
             packagingToolJdk.set(Target.PackagingToolJdk.TARGET_JDK)
             archiveFile.set(
-                layout.buildDirectory.file("distributions/indexino-$version-macos-arm64.zip")
+                layout.buildDirectory.file(
+                    "native-distributions/raw/indexino-$version-macos-arm64.zip"
+                )
             )
             appBundle.set(false)
             val aotTraining =
@@ -296,6 +299,19 @@ construo {
         }
     }
 }
+
+val finalizedMacArm64Archive by
+    tasks.registering(MacDittoArchive::class) {
+        group = "distribution"
+        description = "Finalize the macOS arm64 ZIP with ditto-compatible JAR metadata"
+        inputArchive.set(tasks.named<PackageTask>("packageMacArm64").flatMap { it.archiveFile })
+        normalizedJar.set(normalizedCliJar.flatMap(NormalizedJar::getArchiveFile))
+        aotCache.set(tasks.named<AotTrainingTask>("trainAotMacArm64").flatMap { it.aotCache })
+        dittoExecutable.set("/usr/bin/ditto")
+        outputArchive.set(
+            layout.buildDirectory.file("distributions/indexino-$version-macos-arm64.zip")
+        )
+    }
 
 shadow { addShadowVariantIntoJavaComponent = false }
 
@@ -455,7 +471,12 @@ fun registerNativeDistributionVerification(taskSuffix: String, artifactSuffix: S
         description = "Verify the $artifactSuffix native distribution"
         testClassesDirs = sourceSets.test.get().output.classesDirs
         classpath = sourceSets.test.get().runtimeClasspath
-        val archive = tasks.named<PackageTask>("package$taskSuffix").flatMap { it.archiveFile }
+        val archive =
+            if (taskSuffix == "MacArm64") {
+                finalizedMacArm64Archive.flatMap(MacDittoArchive::getOutputArchive)
+            } else {
+                tasks.named<PackageTask>("package$taskSuffix").flatMap { it.archiveFile }
+            }
         val targetJdkRoot =
             tasks.named<CreateRuntimeImageTask>("createRuntimeImage$taskSuffix").flatMap {
                 it.jdkRoot
@@ -466,10 +487,21 @@ fun registerNativeDistributionVerification(taskSuffix: String, artifactSuffix: S
             }
         val normalizedApplicationJar = normalizedCliJar.flatMap(NormalizedJar::getArchiveFile)
         val aotCache = tasks.named<AotTrainingTask>("trainAot$taskSuffix").flatMap { it.aotCache }
+        val thinApplicationJar = tasks.jar.flatMap { it.archiveFile }
+        val unshrunkApplicationJar = tasks.shadowJar.flatMap { it.archiveFile }
+        val r8ApplicationJar = shrunkCliJar.flatMap { it.archiveFile }
+        val thinRuntimeClasspath = files(thinApplicationJar, runtimeClasspathConfiguration)
+        val verificationReportDirectory =
+            layout.buildDirectory.dir("reports/native-distributions/$artifactSuffix")
         val executableExtension = if (artifactSuffix == "windows-x64") ".exe" else ""
         inputs.file(archive).withPropertyName("nativeArchive")
         inputs.file(normalizedApplicationJar).withPropertyName("normalizedApplicationJar")
         inputs.file(aotCache).withPropertyName("aotCache")
+        inputs.file(thinApplicationJar).withPropertyName("thinApplicationJar")
+        inputs.files(runtimeClasspathConfiguration).withPropertyName("thinRuntimeDependencies")
+        inputs.file(unshrunkApplicationJar).withPropertyName("unshrunkApplicationJar")
+        inputs.file(r8ApplicationJar).withPropertyName("r8ApplicationJar")
+        outputs.dir(verificationReportDirectory).withPropertyName("verificationReports")
         inputs.dir(targetRuntimeImage).withPropertyName("targetRuntimeImage")
         inputs.file(layout.projectDirectory.file("LICENSE")).withPropertyName("applicationLicense")
         inputs
@@ -489,6 +521,14 @@ fun registerNativeDistributionVerification(taskSuffix: String, artifactSuffix: S
             normalizedApplicationJar.get().asFile.absolutePath,
         )
         systemProperty("indexino.aotCache", aotCache.get().asFile.absolutePath)
+        systemProperty("indexino.thinRuntimeClasspath", thinRuntimeClasspath.asPath)
+        systemProperty("indexino.unshrunkJar", unshrunkApplicationJar.get().asFile.absolutePath)
+        systemProperty("indexino.r8Jar", r8ApplicationJar.get().asFile.absolutePath)
+        systemProperty("indexino.version", version.toString())
+        systemProperty(
+            "indexino.verificationReportDirectory",
+            verificationReportDirectory.get().asFile.absolutePath,
+        )
         systemProperty("indexino.expectedJbrVersion", nativeDistributionPin("jbr.version"))
         systemProperty(
             "indexino.applicationLicense",

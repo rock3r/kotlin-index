@@ -69,6 +69,25 @@ task additionally checks PowerShell and `cmd.exe` waiting/redirection/exit propa
 real console `CTRL_C_EVENT`. These tasks must run on matching native hosts; cross-packaging is not a
 substitute for launcher verification.
 
+The same task verifies AOT semantically through copied launcher configurations. Strict mode must
+load the target-default cache before and after relocation and must fail for missing, corrupt, or
+JAR-metadata-incompatible inputs. Automatic mode must use a valid cache and must still complete the
+full workload after rejecting a missing or corrupt cache. Exact pinned-JBR output is retained as a
+diagnostic report, while assertions use parsed cache-path, acceptance/rejection, and linked-class
+facts so incidental log wording is not the sole signal.
+
+A differential golden suite compares stdout/JSONL, stderr routing, exit codes, invalid usage, and
+the manifest schema/version across the thin Maven runtime classpath, unshrunk fat JAR, R8 JAR, and
+the target's real Roast executable. It starts from copies of one pre-indexed fixture so the volatile
+build timestamp is identical. The verifier also writes a report-only benchmark with five
+interleaved production-AOT and `AOTMode=off` launches, median wall/user time, and ZIP/runtime/JAR/AOT
+cache sizes to `build/reports/native-distributions/<target>/`.
+
+On macOS the task consumes `finalizedMacArm64Archive`, which round-trips through native `ditto` and
+overlays the exact normalized JAR and current AOT cache. Standard extraction must recover the exact
+even-second JAR mtime; this is deliberately tested after extraction rather than inferred from Java's
+interpretation of ZIP extra fields.
+
 ## TDD Red-Green Cycle
 
 1. Write the test first.

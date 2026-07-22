@@ -3,6 +3,7 @@ package dev.sebastiano.indexino.distribution
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.nio.file.attribute.FileTime
 import java.util.Base64
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -37,7 +38,13 @@ class NativeDistributionTest {
             val launcher = entries.getValue(launcherEntry(target))
             assertFalse(launcher.isDirectory)
             val applicationJar = entries.getValue("indexino/indexino-cli.jar")
-            assertEquals(NORMALIZED_JAR_MTIME_MILLIS, applicationJar.time)
+            if (target != MACOS_ARM64) {
+                assertEquals(NORMALIZED_JAR_MTIME_MILLIS, applicationJar.time)
+            }
+            assertEquals(
+                Files.size(requiredFile("indexino.normalizedApplicationJar")),
+                applicationJar.size,
+            )
             val packagedApplicationBytes = zip.getInputStream(applicationJar).use { it.readBytes() }
             assertTrue(
                 packagedApplicationBytes.contentEquals(
@@ -60,6 +67,8 @@ class NativeDistributionTest {
                 launcherConfiguration,
                 "\"vmArgs\":[\"--enable-native-access=ALL-UNNAMED\"]",
             )
+            assertFalse(launcherConfiguration.contains("AOTMode"))
+            assertFalse(launcherConfiguration.contains("-Xlog:aot"))
             assertFalse(entries.containsKey(runtimeJavaEntry(target)))
             assertPackagedAotCache(zip, entries, aotCache, target)
 
@@ -188,6 +197,10 @@ class NativeDistributionTest {
         val launcher = installation.resolve(launcherRelativePath(target))
         assertTrue(Files.isRegularFile(launcher), "Missing launcher: $launcher")
         assertFalse(Files.exists(installation.resolve(runtimeJavaRelativePath(target))))
+        assertEquals(
+            FileTime.fromMillis(NORMALIZED_JAR_MTIME_MILLIS),
+            Files.getLastModifiedTime(installation.resolve("indexino-cli.jar")),
+        )
         if (target != WINDOWS_X64) {
             val processHelper = installation.resolve("runtime/lib/jspawnhelper")
             assertTrue(Files.isExecutable(launcher), "Launcher is not executable: $launcher")
@@ -236,6 +249,304 @@ class NativeDistributionTest {
             )
         assertEquals(0, query.exitCode, query.diagnostic())
         assertContains(query.stdout, "\"callee\":\"ActionButton\"")
+    }
+
+    @Test
+    fun `strict verification loads the default AOT cache before and after relocation`() {
+        val target = requiredProperty("indexino.nativeTarget")
+        val installation =
+            extractArchive(requiredFile("indexino.nativeArchive"), target, "aot-strict")
+        configureAotVerification(installation, "on")
+        val caller = tempDir.resolve("aot-strict-caller").createDirectories()
+        val workspace = createFixtureWorkspace()
+
+        var launcher = installation.resolve(launcherRelativePath(target))
+        val diagnostic = assertAcceptedAotLaunch(launcher, caller, installation, target)
+        writeAotDiagnostic(target, diagnostic)
+        assertCompleteWorkload(launcher, caller, workspace)
+
+        val relocatedParent = tempDir.resolve("aot-strict-relocated").createDirectories()
+        val relocated = relocatedParent.resolve("indexino")
+        Files.move(installation, relocated, StandardCopyOption.ATOMIC_MOVE)
+        launcher = relocated.resolve(launcherRelativePath(target))
+        assertAcceptedAotLaunch(launcher, caller, relocated, target)
+        assertCallerRelativeInvocation(launcher, caller, workspace)
+    }
+
+    @Test
+    fun `AOT launch performance and distribution sizes are reported`() {
+        val target = requiredProperty("indexino.nativeTarget")
+        val archive = requiredFile("indexino.nativeArchive")
+        val aotInstallation = extractArchive(archive, target, "performance-aot")
+        val offInstallation = extractArchive(archive, target, "performance-off")
+        configureAotMode(offInstallation, "off")
+        val aotLauncher = aotInstallation.resolve(launcherRelativePath(target))
+        val offLauncher = offInstallation.resolve(launcherRelativePath(target))
+        val caller = tempDir.resolve("performance-caller").createDirectories()
+        val aotSamples = mutableListOf<Timing>()
+        val offSamples = mutableListOf<Timing>()
+
+        repeat(PERFORMANCE_SAMPLE_COUNT) { iteration ->
+            if (iteration % 2 == 0) {
+                aotSamples += measureLaunch(aotLauncher, caller, target, "aot-$iteration")
+                offSamples += measureLaunch(offLauncher, caller, target, "off-$iteration")
+            } else {
+                offSamples += measureLaunch(offLauncher, caller, target, "off-$iteration")
+                aotSamples += measureLaunch(aotLauncher, caller, target, "aot-$iteration")
+            }
+        }
+
+        val runtime = aotInstallation.resolve("runtime")
+        val report =
+            """
+            {
+              "target": "$target",
+              "sampleCountPerMode": $PERFORMANCE_SAMPLE_COUNT,
+              "aot": {
+                "medianWallSeconds": ${median(aotSamples.map(Timing::wallSeconds))},
+                "medianUserSeconds": ${median(aotSamples.map(Timing::userSeconds))}
+              },
+              "aotModeOff": {
+                "medianWallSeconds": ${median(offSamples.map(Timing::wallSeconds))},
+                "medianUserSeconds": ${median(offSamples.map(Timing::userSeconds))}
+              },
+              "sizesBytes": {
+                "zip": ${Files.size(archive)},
+                "runtime": ${directorySize(runtime)},
+                "jar": ${Files.size(aotInstallation.resolve("indexino-cli.jar"))},
+                "aotCache": ${Files.size(runtime.resolve(aotCacheRuntimePath(target)))}
+              }
+            }
+            """
+                .trimIndent() + "\n"
+        reportDirectory().resolve("aot-performance.json").writeText(report)
+    }
+
+    @Test
+    fun `automatic mode loads a valid cache and completes the workload`() {
+        val target = requiredProperty("indexino.nativeTarget")
+        val installation =
+            extractArchive(requiredFile("indexino.nativeArchive"), target, "aot-auto")
+        configureAotVerification(installation, "auto")
+        val caller = tempDir.resolve("aot-auto-caller").createDirectories()
+        val workspace = createFixtureWorkspace()
+
+        assertAcceptedAotLaunch(
+            installation.resolve(launcherRelativePath(target)),
+            caller,
+            installation,
+            target,
+        )
+        assertCompleteWorkload(
+            installation.resolve(launcherRelativePath(target)),
+            caller,
+            workspace,
+        )
+    }
+
+    @Test
+    fun `strict mode rejects missing and corrupt caches`() {
+        val target = requiredProperty("indexino.nativeTarget")
+        listOf("missing", "corrupt").forEach { mutation ->
+            val installation =
+                extractArchive(
+                    requiredFile("indexino.nativeArchive"),
+                    target,
+                    "aot-strict-$mutation",
+                )
+            configureAotVerification(installation, "on")
+            mutateAotCache(installation, target, mutation)
+            assertRejectedAotLaunch(
+                installation.resolve(launcherRelativePath(target)),
+                tempDir,
+                expectSuccess = false,
+            )
+        }
+    }
+
+    @Test
+    fun `automatic mode rejects missing and corrupt caches then completes the workload`() {
+        val target = requiredProperty("indexino.nativeTarget")
+        listOf("missing", "corrupt").forEach { mutation ->
+            val installation =
+                extractArchive(requiredFile("indexino.nativeArchive"), target, "aot-auto-$mutation")
+            configureAotVerification(installation, "auto")
+            mutateAotCache(installation, target, mutation)
+            val launcher = installation.resolve(launcherRelativePath(target))
+            assertRejectedAotLaunch(launcher, tempDir, expectSuccess = true)
+            assertCompleteWorkload(
+                launcher,
+                tempDir.resolve("aot-auto-$mutation-caller").createDirectories(),
+                createFixtureWorkspace("aot-auto-$mutation-fixture"),
+            )
+        }
+    }
+
+    @Test
+    fun `strict mode rejects application JAR metadata drift`() {
+        val target = requiredProperty("indexino.nativeTarget")
+        val installation =
+            extractArchive(requiredFile("indexino.nativeArchive"), target, "aot-jar-metadata")
+        configureAotVerification(installation, "on")
+        Files.setLastModifiedTime(
+            installation.resolve("indexino-cli.jar"),
+            FileTime.fromMillis(NORMALIZED_JAR_MTIME_MILLIS + 2_000L),
+        )
+
+        assertRejectedAotLaunch(
+            installation.resolve(launcherRelativePath(target)),
+            tempDir,
+            expectSuccess = false,
+        )
+    }
+
+    private fun configureAotVerification(installation: Path, mode: String) {
+        val configuration = installation.resolve("app/indexino.json")
+        val original = configuration.readText()
+        val productionArgs = "\"vmArgs\":[\"--enable-native-access=ALL-UNNAMED\"]"
+        val verificationArgs =
+            "\"vmArgs\":[\"--enable-native-access=ALL-UNNAMED\",\"-XX:AOTMode=$mode\",\"-Xlog:aot=info\"]"
+        assertContains(original, productionArgs)
+        configuration.writeText(original.replace(productionArgs, verificationArgs))
+    }
+
+    private fun assertAcceptedAotLaunch(
+        launcher: Path,
+        caller: Path,
+        installation: Path,
+        target: String,
+    ): ProcessResult {
+        val result = runLauncher(launcher, caller, "--help")
+        assertEquals(0, result.exitCode, result.diagnostic())
+        val facts = AotLogParser.parse(result.stdout + result.stderr)
+        assertTrue(facts.accepted, result.diagnostic())
+        assertFalse(facts.rejected, result.diagnostic())
+        assertEquals(true, facts.linkedClasses, result.diagnostic())
+        val attemptedCache = Path.of(requireNotNull(facts.cachePath) { result.diagnostic() })
+        assertEquals(
+            installation.resolve("runtime").resolve(aotCacheRuntimePath(target)).toRealPath(),
+            attemptedCache.toRealPath(),
+        )
+        return result
+    }
+
+    private fun writeAotDiagnostic(target: String, result: ProcessResult) {
+        val diagnostic = buildString {
+            appendLine("target=$target")
+            appendLine("jbr=${requiredProperty("indexino.expectedJbrVersion")}")
+            appendLine("exit=${result.exitCode}")
+            appendLine("--- stdout ---")
+            append(result.stdout)
+            appendLine("--- stderr ---")
+            append(result.stderr)
+        }
+        reportDirectory().resolve("aot-diagnostic.txt").writeText(diagnostic)
+    }
+
+    private fun configureAotMode(installation: Path, mode: String) {
+        val configuration = installation.resolve("app/indexino.json")
+        val original = configuration.readText()
+        val productionArgs = "\"vmArgs\":[\"--enable-native-access=ALL-UNNAMED\"]"
+        val modeArgs = "\"vmArgs\":[\"--enable-native-access=ALL-UNNAMED\",\"-XX:AOTMode=$mode\"]"
+        assertContains(original, productionArgs)
+        configuration.writeText(original.replace(productionArgs, modeArgs))
+    }
+
+    private fun measureLaunch(
+        launcher: Path,
+        caller: Path,
+        target: String,
+        sampleName: String,
+    ): Timing =
+        if (target == WINDOWS_X64) {
+            measureWindowsLaunch(launcher, caller, sampleName)
+        } else {
+            val result = runCommand(caller, "/usr/bin/time", "-p", launcher.toString(), "--help")
+            assertEquals(0, result.exitCode, result.diagnostic())
+            Timing(
+                wallSeconds = parseTime(result.stderr, "real"),
+                userSeconds = parseTime(result.stderr, "user"),
+            )
+        }
+
+    private fun measureWindowsLaunch(launcher: Path, caller: Path, sampleName: String): Timing {
+        val stdout = tempDir.resolve("$sampleName.out")
+        val stderr = tempDir.resolve("$sampleName.err")
+        val script = tempDir.resolve("$sampleName.ps1")
+        script.writeText(
+            """
+            ${'$'}ErrorActionPreference = 'Stop'
+            ${'$'}timer = [Diagnostics.Stopwatch]::StartNew()
+            ${'$'}process = Start-Process -FilePath '${powershellQuote(launcher)}' `
+                -ArgumentList '--help' `
+                -WorkingDirectory '${powershellQuote(caller)}' `
+                -NoNewWindow -PassThru `
+                -RedirectStandardOutput '${powershellQuote(stdout)}' `
+                -RedirectStandardError '${powershellQuote(stderr)}'
+            ${'$'}process.WaitForExit()
+            ${'$'}timer.Stop()
+            Write-Output ('INDEXINO_TIMING {0} {1}' -f `
+                (${'$'}timer.Elapsed.TotalSeconds.ToString('R', [Globalization.CultureInfo]::InvariantCulture)), `
+                (${'$'}process.UserProcessorTime.TotalSeconds.ToString('R', [Globalization.CultureInfo]::InvariantCulture)))
+            exit ${'$'}process.ExitCode
+            """
+                .trimIndent()
+        )
+        val result =
+            runCommand(
+                caller,
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                script.toString(),
+            )
+        assertEquals(0, result.exitCode, result.diagnostic())
+        val timing = result.stdout.lineSequence().firstOrNull { it.startsWith("INDEXINO_TIMING ") }
+        assertTrue(timing != null, result.diagnostic())
+        val values = timing.removePrefix("INDEXINO_TIMING ").split(' ')
+        return Timing(values[0].toDouble(), values[1].toDouble())
+    }
+
+    private fun parseTime(output: String, name: String): Double {
+        val match = Regex("(?m)^$name ([0-9]+(?:\\.[0-9]+)?)\\s*$").find(output)
+        return requireNotNull(match) { "Missing $name timing in:\n$output" }
+            .groupValues[1]
+            .toDouble()
+    }
+
+    private fun median(values: List<Double>): Double = values.sorted()[values.size / 2]
+
+    private fun directorySize(directory: Path): Long =
+        Files.walk(directory).use { paths ->
+            paths.filter(Files::isRegularFile).mapToLong(Files::size).sum()
+        }
+
+    private fun reportDirectory(): Path =
+        Path.of(requiredProperty("indexino.verificationReportDirectory")).createDirectories()
+
+    private fun mutateAotCache(installation: Path, target: String, mutation: String) {
+        val cache = installation.resolve("runtime").resolve(aotCacheRuntimePath(target))
+        when (mutation) {
+            "missing" -> Files.delete(cache)
+            "corrupt" -> Files.write(cache, ByteArray(4_096) { 0x5a.toByte() })
+            else -> error("Unsupported AOT cache mutation: $mutation")
+        }
+    }
+
+    private fun assertRejectedAotLaunch(launcher: Path, caller: Path, expectSuccess: Boolean) {
+        val result = runLauncher(launcher, caller, "--help")
+        if (expectSuccess) {
+            assertEquals(0, result.exitCode, result.diagnostic())
+        } else {
+            assertTrue(result.exitCode != 0, result.diagnostic())
+        }
+        val facts = AotLogParser.parse(result.stdout + result.stderr)
+        assertFalse(facts.accepted, result.diagnostic())
+        assertTrue(facts.rejected, result.diagnostic())
+        assertTrue(facts.linkedClasses != true, result.diagnostic())
     }
 
     @Test
@@ -527,8 +838,8 @@ class NativeDistributionTest {
         assertContains(result.stdout, expected)
     }
 
-    private fun createFixtureWorkspace(): Path {
-        val workspace = tempDir.resolve("fixture")
+    private fun createFixtureWorkspace(name: String = "fixture"): Path {
+        val workspace = tempDir.resolve(name)
         workspace.resolve("app/src/main/kotlin/sample").createDirectories()
         workspace.resolve("app/src/main/java/sample").createDirectories()
         workspace.resolve("app/src/main/res/values").createDirectories()
@@ -851,6 +1162,8 @@ class NativeDistributionTest {
         fun diagnostic(): String = "exit=$exitCode\nstdout:\n$stdout\nstderr:\n$stderr"
     }
 
+    private data class Timing(val wallSeconds: Double, val userSeconds: Double)
+
     private companion object {
         val nativeConsoleTypeDefinition =
             """
@@ -938,6 +1251,7 @@ class NativeDistributionTest {
         const val POSIX_FILE_MODE = 420
         const val PROCESS_TIMEOUT_MINUTES = 5L
         const val PROCESS_KILL_TIMEOUT_SECONDS = 10L
+        const val PERFORMANCE_SAMPLE_COUNT = 5
         const val INTERRUPT_FIXTURE_FILE_COUNT = 2_000
         val REQUIRED_MODULES = setOf("jdk.compiler", "jdk.unsupported", "jdk.crypto.ec")
         val REQUIRED_JBR_LEGAL_FILES =
