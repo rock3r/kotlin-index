@@ -10,11 +10,14 @@ import dev.detekt.gradle.DetektCreateBaselineTask
 import dev.sebastiano.indexino.buildlogic.AotTrainingTask
 import dev.sebastiano.indexino.buildlogic.MacDittoArchive
 import dev.sebastiano.indexino.buildlogic.NormalizedJar
+import dev.sebastiano.indexino.buildlogic.Sha256File
 import io.github.fourlastor.construo.Target
 import io.github.fourlastor.construo.task.PackageTask
 import io.github.fourlastor.construo.task.jvm.CreateRuntimeImageTask
 import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermissions
+import java.security.MessageDigest
+import java.util.HexFormat
 import java.util.Properties
 import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.tasks.Delete
@@ -151,6 +154,15 @@ fun nativeDistributionPin(name: String) =
         "Missing native distribution pin '$name'"
     }
 
+fun nativeDistributionJdkUrl(target: String, pin: String) =
+    providers
+        .environmentVariable("INDEXINO_NATIVE_${target}_JDK_URL")
+        .orElse(nativeDistributionPin(pin))
+
+fun Target.nativeDistributionRoastUrl(target: String) {
+    providers.environmentVariable("INDEXINO_NATIVE_${target}_ROAST_URL").orNull?.let(roastUrl::set)
+}
+
 val nativeVmArgs = listOf("--enable-native-access=ALL-UNNAMED")
 val roastVmArgs = nativeVmArgs + "-Dindexino.roastLauncher=true"
 val aotTrainingFixture = layout.projectDirectory.dir("gradle/aot-training/fixture")
@@ -219,6 +231,10 @@ construo {
     jarTask.set(normalizedCliJar.map { it.name })
     zipFolder.set("indexino")
     packageFiles.put("licenses/indexino-LICENSE", layout.projectDirectory.file("LICENSE"))
+    packageFiles.put(
+        "licenses/roast-LICENSE",
+        layout.projectDirectory.file("third-party/roast/LICENSE"),
+    )
     jlink {
         modules.addAll("jdk.compiler", "jdk.unsupported", "jdk.crypto.ec")
         guessModulesFromJar.set(true)
@@ -226,6 +242,7 @@ construo {
     }
     roast {
         version.set(nativeDistributionPin("roast.version"))
+        baseUrl.set(nativeDistributionPin("roast.baseUrl"))
         runOnFirstThread.set(true)
         useZgc.set(false)
         vmArgs.addAll(roastVmArgs)
@@ -233,7 +250,8 @@ construo {
     targets {
         create<Target.Linux>("linuxX64") {
             architecture.set(Target.Architecture.X86_64)
-            jdkUrl.set(nativeDistributionPin("linuxX64.jdkUrl"))
+            jdkUrl.set(nativeDistributionJdkUrl("LINUX_X64", "linuxX64.jdkUrl"))
+            nativeDistributionRoastUrl("LINUX_X64")
             jdkSha256.set(nativeDistributionPin("linuxX64.jdkSha256"))
             roastSha256.set(nativeDistributionPin("linuxX64.roastSha256"))
             packagingToolJdk.set(Target.PackagingToolJdk.TARGET_JDK)
@@ -255,7 +273,8 @@ construo {
         }
         create<Target.MacOs>("macArm64") {
             architecture.set(Target.Architecture.AARCH64)
-            jdkUrl.set(nativeDistributionPin("macArm64.jdkUrl"))
+            jdkUrl.set(nativeDistributionJdkUrl("MACOS_ARM64", "macArm64.jdkUrl"))
+            nativeDistributionRoastUrl("MACOS_ARM64")
             jdkSha256.set(nativeDistributionPin("macArm64.jdkSha256"))
             roastSha256.set(nativeDistributionPin("macArm64.roastSha256"))
             packagingToolJdk.set(Target.PackagingToolJdk.TARGET_JDK)
@@ -280,7 +299,8 @@ construo {
         }
         create<Target.Windows>("windowsX64") {
             architecture.set(Target.Architecture.X86_64)
-            jdkUrl.set(nativeDistributionPin("windowsX64.jdkUrl"))
+            jdkUrl.set(nativeDistributionJdkUrl("WINDOWS_X64", "windowsX64.jdkUrl"))
+            nativeDistributionRoastUrl("WINDOWS_X64")
             jdkSha256.set(nativeDistributionPin("windowsX64.jdkSha256"))
             roastSha256.set(nativeDistributionPin("windowsX64.roastSha256"))
             packagingToolJdk.set(Target.PackagingToolJdk.TARGET_JDK)
@@ -319,6 +339,33 @@ val finalizedMacArm64Archive by
     }
 
 tasks.named<PackageTask>("packageMacArm64") { finalizedBy(finalizedMacArm64Archive) }
+
+fun registerNativeDistributionChecksum(taskSuffix: String, archive: Provider<RegularFile>) =
+    tasks.register<Sha256File>("sha256NativeDistribution$taskSuffix") {
+        group = "distribution"
+        description = "Generate the SHA-256 file for the $taskSuffix native distribution"
+        inputFile.set(archive)
+        outputFile.set(
+            layout.file(
+                archive.map { file -> file.asFile.resolveSibling("${file.asFile.name}.sha256") }
+            )
+        )
+    }
+
+registerNativeDistributionChecksum(
+    "LinuxX64",
+    tasks.named<PackageTask>("packageLinuxX64").flatMap { it.archiveFile },
+)
+
+registerNativeDistributionChecksum(
+    "MacArm64",
+    finalizedMacArm64Archive.flatMap(MacDittoArchive::getOutputArchive),
+)
+
+registerNativeDistributionChecksum(
+    "WindowsX64",
+    tasks.named<PackageTask>("packageWindowsX64").flatMap { it.archiveFile },
+)
 
 val restrictedMacAotCacheDirectory =
     layout.buildDirectory.dir("tmp/restrictedMacAotCacheForVerification")
@@ -535,12 +582,24 @@ fun registerNativeDistributionVerification(
         dependsOn(cleanVerificationReports)
         testClassesDirs = sourceSets.test.get().output.classesDirs
         classpath = sourceSets.test.get().runtimeClasspath
-        val archive =
+        val defaultArchive =
             if (taskSuffix == "MacArm64") {
                 finalizedMacArm64Archive.flatMap(MacDittoArchive::getOutputArchive)
             } else {
                 tasks.named<PackageTask>("package$taskSuffix").flatMap { it.archiveFile }
             }
+        val verificationArchiveEnvironment =
+            when (taskSuffix) {
+                "LinuxX64" -> "INDEXINO_NATIVE_LINUX_X64_VERIFICATION_ARCHIVE"
+                "MacArm64" -> "INDEXINO_NATIVE_MACOS_ARM64_VERIFICATION_ARCHIVE"
+                "WindowsX64" -> "INDEXINO_NATIVE_WINDOWS_X64_VERIFICATION_ARCHIVE"
+                else -> error("Unsupported native verification target: $taskSuffix")
+            }
+        val archive =
+            providers
+                .environmentVariable(verificationArchiveEnvironment)
+                .map(layout.projectDirectory::file)
+                .orElse(defaultArchive)
         val targetJdkRoot =
             tasks.named<CreateRuntimeImageTask>("createRuntimeImage$taskSuffix").flatMap {
                 it.jdkRoot
@@ -579,6 +638,9 @@ fun registerNativeDistributionVerification(
         inputs.dir(targetRuntimeImage).withPropertyName("targetRuntimeImage")
         inputs.file(layout.projectDirectory.file("LICENSE")).withPropertyName("applicationLicense")
         inputs
+            .file(layout.projectDirectory.file("third-party/roast/LICENSE"))
+            .withPropertyName("roastLicense")
+        inputs
             .files(
                 targetJdkRoot.map { it.file("bin/jlink$executableExtension") },
                 targetJdkRoot.map { it.file("bin/jdeps$executableExtension") },
@@ -615,6 +677,10 @@ fun registerNativeDistributionVerification(
             "indexino.applicationLicense",
             layout.projectDirectory.file("LICENSE").asFile.absolutePath,
         )
+        systemProperty(
+            "indexino.roastLicense",
+            layout.projectDirectory.file("third-party/roast/LICENSE").asFile.absolutePath,
+        )
     }
 }
 
@@ -644,10 +710,52 @@ val verifyMavenPublication by
                 .asFile
                 .absolutePath,
         )
+        systemProperty(
+            "indexino.publicationRepository",
+            testMavenRepository.get().asFile.absolutePath,
+        )
         systemProperty("indexino.publicationGroup", publicationGroupId)
         systemProperty("indexino.publicationArtifact", publicationArtifactId.get())
         systemProperty("indexino.publicationVersion", publicationVersion)
     }
+
+val generateBundledDependencyInventory by tasks.registering {
+    group = "distribution"
+    description = "Generate the native bundle's resolved JVM dependency inventory"
+    val outputFile = layout.buildDirectory.file("reports/release/bundled-dependencies.txt")
+    inputs.files(runtimeClasspathConfiguration).withPropertyName("runtimeClasspath")
+    outputs.file(outputFile).withPropertyName("dependencyInventory")
+    doLast {
+        val entries =
+            runtimeClasspathConfiguration
+                .get()
+                .resolvedConfiguration
+                .resolvedArtifacts
+                .sortedBy { artifact -> artifact.moduleVersion.id.toString() }
+                .map { artifact ->
+                    val digest = MessageDigest.getInstance("SHA-256")
+                    artifact.file.inputStream().use { input ->
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            digest.update(buffer, 0, count)
+                        }
+                    }
+                    "${HexFormat.of().formatHex(digest.digest())}  ${artifact.moduleVersion.id}  " +
+                        artifact.file.name
+                }
+        val output = outputFile.get().asFile
+        output.parentFile.mkdirs()
+        output.writeText(
+            buildString {
+                appendLine("# Indexino bundled JVM dependency inventory")
+                appendLine("# sha256  coordinates  resolved-file")
+                entries.forEach(::appendLine)
+            }
+        )
+    }
+}
 
 tasks.check {
     dependsOn("detektMain", "detektTest", "ktfmtCheckMain", "ktfmtCheckScripts", "ktfmtCheckTest")
