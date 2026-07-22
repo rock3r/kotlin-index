@@ -27,6 +27,21 @@ class AotTrainingTaskContractTest {
     @TempDir lateinit var projectDirectory: Path
 
     @Test
+    fun `committed training sources are checked out with LF line endings`() {
+        val repository = Path.of("").toAbsolutePath()
+        val fixture = "gradle/aot-training/fixture/app/src/main/kotlin/sample/Panel.kt"
+        val process =
+            ProcessBuilder("git", "check-attr", "eol", "--", fixture)
+                .directory(repository.toFile())
+                .redirectErrorStream(true)
+                .start()
+        val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
+
+        assertEquals(0, process.waitFor(), output)
+        assertEquals("$fixture: eol: lf", output)
+    }
+
+    @Test
     fun `training rejects a full sdk instead of mutating it`() {
         writeFixture(fullSdkRuntime = true)
 
