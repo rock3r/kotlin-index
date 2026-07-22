@@ -40,10 +40,14 @@ class ConstruoContractTest {
         sentinel.writeText("preserve")
         reports.parent.createDirectories()
         Files.deleteIfExists(backup)
-        if (Files.exists(reports)) Files.move(reports, backup, ATOMIC_MOVE)
-        Files.createSymbolicLink(reports, protectedDirectory)
+        var reportsMoved = false
 
         try {
+            if (Files.exists(reports)) {
+                Files.move(reports, backup, ATOMIC_MOVE)
+                reportsMoved = true
+            }
+            Files.createSymbolicLink(reports, protectedDirectory)
             val result =
                 GradleRunner.create()
                     .withProjectDir(rootProject.toFile())
@@ -59,7 +63,7 @@ class ConstruoContractTest {
             assertTrue(Files.isRegularFile(sentinel), "Report cleanup followed the symlink")
         } finally {
             Files.deleteIfExists(reports)
-            if (Files.exists(backup)) Files.move(backup, reports, ATOMIC_MOVE)
+            if (reportsMoved) Files.move(backup, reports, ATOMIC_MOVE)
         }
     }
 

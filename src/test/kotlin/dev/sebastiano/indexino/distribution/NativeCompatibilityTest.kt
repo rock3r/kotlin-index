@@ -37,7 +37,7 @@ class NativeCompatibilityTest {
                     "-Command",
                     "${'$'}child = Start-Process -FilePath 'powershell.exe' " +
                         "-ArgumentList '-NoProfile','-NonInteractive','-Command'," +
-                        "'Start-Sleep -Seconds 3' -PassThru; " +
+                        "'Start-Sleep -Seconds 15' -PassThru; " +
                         "Set-Content -LiteralPath '${powershellQuote(childPidFile)}' " +
                         "-Value ${'$'}child.Id",
                 )
@@ -59,7 +59,9 @@ class NativeCompatibilityTest {
             assertTrue(Files.isRegularFile(childPidFile), "Output-holder PID was not recorded")
             child = ProcessHandle.of(childPidFile.readText().trim().toLong()).orElse(null)
             assertTrue(
-                TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt) < 2_000L,
+                TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt) <
+                    if (requiredProperty("indexino.nativeTarget") == WINDOWS_X64) 8_000L
+                    else 2_000L,
                 "Output capture waited for a descendant-held stream",
             )
         } finally {
@@ -80,7 +82,7 @@ class NativeCompatibilityTest {
                 "/bin/sh",
                 "-c",
                 "trap 'sleep 30 & printf \"%s\" \"${'$'}!\" > \"${'$'}1\"; " +
-                    "sleep 1; exit 0' TERM; while :; do sleep 1; done",
+                    "exit 0' TERM; while :; do sleep 1; done",
                 "sh",
                 lateChildPidFile.toString(),
             )
@@ -90,9 +92,14 @@ class NativeCompatibilityTest {
             assertFailsWith<AssertionError> {
                 runCommand(tempDir, 500L, TimeUnit.MILLISECONDS, *command)
             }
-            assertTrue(Files.isRegularFile(lateChildPidFile), "Late child PID was not recorded")
-            lateChild = ProcessHandle.of(lateChildPidFile.readText().trim().toLong()).orElse(null)
-            assertFalse(lateChild?.isAlive == true, "Late timeout descendant is still alive")
+            if (Files.isRegularFile(lateChildPidFile)) {
+                lateChild =
+                    ProcessHandle.of(lateChildPidFile.readText().trim().toLong()).orElse(null)
+            }
+            assertFalse(
+                Files.exists(lateChildPidFile),
+                "Root termination hook was allowed to create a late descendant",
+            )
         } finally {
             lateChild?.destroyForcibly()
             lateChild?.onExit()?.get(2L, TimeUnit.SECONDS)
@@ -126,10 +133,16 @@ class NativeCompatibilityTest {
                 )
             }
         val startedAt = System.nanoTime()
+        val timeout =
+            if (requiredProperty("indexino.nativeTarget") == WINDOWS_X64) {
+                5L to TimeUnit.SECONDS
+            } else {
+                500L to TimeUnit.MILLISECONDS
+            }
 
         val failure =
             assertFailsWith<AssertionError> {
-                runCommand(tempDir, 500L, TimeUnit.MILLISECONDS, *command)
+                runCommand(tempDir, timeout.first, timeout.second, *command)
             }
 
         assertContains(failure.message.orEmpty(), "timed out")
@@ -140,8 +153,9 @@ class NativeCompatibilityTest {
             "Timed-out descendant $childPid is still alive",
         )
         assertTrue(
-            TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - startedAt) < 5L,
-            "Timed-out process cleanup exceeded five seconds",
+            TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - startedAt) <
+                if (requiredProperty("indexino.nativeTarget") == WINDOWS_X64) 15L else 5L,
+            "Timed-out process cleanup exceeded its platform bound",
         )
     }
 

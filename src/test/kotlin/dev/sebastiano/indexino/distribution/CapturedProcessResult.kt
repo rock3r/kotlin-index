@@ -61,10 +61,11 @@ internal fun terminateProcessTree(process: Process, timeout: Long, timeoutUnit: 
     val finalDeadline = startedAt + timeoutNanos
 
     refreshProcessTree(root, handles)
-    destroyLeafFirst(handles.values, forcibly = false)
-    if (awaitTermination(root, handles, gracefulDeadline)) return true
+    terminateDescendants(root, handles, forcibly = false)
+    awaitDescendantTermination(root, handles, gracefulDeadline)
     refreshProcessTree(root, handles)
-    destroyLeafFirst(handles.values, forcibly = true)
+    root.destroyForcibly()
+    terminateDescendants(root, handles, forcibly = true)
     return awaitTermination(root, handles, finalDeadline)
 }
 
@@ -77,9 +78,30 @@ private fun refreshProcessTree(root: ProcessHandle, handles: MutableMap<Long, Pr
     }
 }
 
-private fun destroyLeafFirst(handles: Collection<ProcessHandle>, forcibly: Boolean) {
-    handles.sortedByDescending(::processDepth).filter(ProcessHandle::isAlive).forEach { handle ->
-        if (forcibly) handle.destroyForcibly() else handle.destroy()
+private fun terminateDescendants(
+    root: ProcessHandle,
+    handles: MutableMap<Long, ProcessHandle>,
+    forcibly: Boolean,
+) {
+    refreshProcessTree(root, handles)
+    handles.values
+        .filter { it.pid() != root.pid() }
+        .sortedByDescending(::processDepth)
+        .filter(ProcessHandle::isAlive)
+        .forEach { handle -> if (forcibly) handle.destroyForcibly() else handle.destroy() }
+}
+
+private fun awaitDescendantTermination(
+    root: ProcessHandle,
+    handles: MutableMap<Long, ProcessHandle>,
+    deadlineNanos: Long,
+) {
+    while (true) {
+        terminateDescendants(root, handles, forcibly = false)
+        if (handles.values.none { it.pid() != root.pid() && it.isAlive }) return
+        val remainingNanos = deadlineNanos - System.nanoTime()
+        if (remainingNanos <= 0L) return
+        Thread.sleep(minOf(TimeUnit.NANOSECONDS.toMillis(remainingNanos) + 1L, POLL_MILLIS))
     }
 }
 
