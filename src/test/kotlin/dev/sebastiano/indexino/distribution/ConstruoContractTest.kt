@@ -13,7 +13,6 @@ import java.util.Properties
 import java.util.jar.JarFile
 import java.util.zip.ZipFile
 import kotlin.io.path.createDirectories
-import kotlin.io.path.readText
 import kotlin.io.path.writeText
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -30,18 +29,30 @@ class ConstruoContractTest {
 
     @Test
     fun `native runtime classpath is resolved only when the verifier executes`() {
-        val buildScript = Path.of(requiredProperty("indexino.nativeBuildScript")).readText()
-        val assignment =
-            "systemProperty(\"indexino.thinRuntimeClasspath\", thinRuntimeClasspath.asPath)"
-        val assignmentIndex = buildScript.indexOf(assignment)
-        val doFirstIndex = buildScript.lastIndexOf("doFirst {", assignmentIndex)
-        val doFirstEnd = buildScript.indexOf("\n        }", doFirstIndex)
-
-        assertTrue(assignmentIndex >= 0, "Missing native runtime classpath assignment")
-        assertTrue(
-            doFirstIndex >= 0 && assignmentIndex < doFirstEnd,
-            "Native runtime classpath must be resolved inside the verifier's doFirst action",
+        val initScript = projectDirectory.resolve("reject-runtime-classpath-resolution.gradle")
+        initScript.writeText(
+            """
+            gradle.beforeProject { project ->
+                if (project == project.rootProject) {
+                    project.configurations.matching { it.name == 'runtimeClasspath' }.configureEach {
+                        incoming.beforeResolve {
+                            throw new GradleException('runtimeClasspath resolved during configuration')
+                        }
+                    }
+                }
+            }
+            """
+                .trimIndent()
         )
+
+        val result =
+            GradleRunner.create()
+                .withProjectDir(Path.of(requiredProperty("indexino.projectDirectory")).toFile())
+                .withTestKitDir(Path.of(requiredProperty("indexino.gradleUserHome")).toFile())
+                .withArguments("--offline", "--init-script", initScript.toString(), "help")
+                .build()
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":help")?.outcome)
     }
 
     @Test
